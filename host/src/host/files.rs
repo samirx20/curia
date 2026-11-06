@@ -104,7 +104,7 @@ fn numstat(cwd: &Path, path: &str) -> (usize, usize) {
 }
 
 /// A path inside the thread's folder; anything that climbs out (`..`, an absolute path) is refused.
-fn inside(cwd: &str, path: &str) -> Result<PathBuf> {
+pub(super) fn inside(cwd: &str, path: &str) -> Result<PathBuf> {
     // Checked the same on every host: a Windows-style path sent to a Linux host must not slip
     // through as an odd file name.
     let starts_outside = path.starts_with('/') || path.starts_with('\\') || path.contains(':');

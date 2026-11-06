@@ -20,6 +20,8 @@ pub struct LineProcess {
     stderr_tail: Mutex<VecDeque<String>>,
     kill: Mutex<Option<oneshot::Sender<()>>>,
     events: mpsc::UnboundedSender<Event>,
+    /// The CLI's process id (its children are found from it, e.g. for the ports they serve).
+    pid: Option<u32>,
 }
 
 /// What the process produces: stdout lines in order, then its exit code.
@@ -44,6 +46,7 @@ impl LineProcess {
         let stdin = proc.child.stdin.take().context("no stdin")?;
         let stdout = proc.child.stdout.take().context("no stdout")?;
         let stderr = proc.child.stderr.take().context("no stderr")?;
+        let pid = proc.child.id();
         let (kill_tx, kill_rx) = oneshot::channel();
         let p = Arc::new(LineProcess {
             name,
@@ -52,6 +55,7 @@ impl LineProcess {
             stderr_tail: Mutex::new(VecDeque::new()),
             kill: Mutex::new(Some(kill_tx)),
             events,
+            pid,
         });
 
         let me = p.clone();
@@ -118,6 +122,10 @@ impl LineProcess {
     /// replay can take the same step.
     pub fn note(&self, frame: &Value) {
         self.record(Entry::In { ms: self.ms(), line: frame.to_string() });
+    }
+
+    pub fn pid(&self) -> Option<u32> {
+        self.pid
     }
 
     /// Records events and sends them to the session's owner.

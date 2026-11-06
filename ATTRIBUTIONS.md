@@ -182,6 +182,38 @@ TLS for the phone link (rustls with the `ring` backend), and Web Push: message e
 | getrandom | 0.2.17, 0.3.4, 0.4.3 | MIT OR Apache-2.0 | host, ring (randomness) |
 | windows-sys, windows-targets, windows_* | 0.52.x | MIT OR Apache-2.0 | ring, schannel (Windows) |
 
+### Terminals, files and ports (added 2026-11-07)
+
+Shells in a pseudo-terminal (ConPTY on Windows) with the screen kept on the host, and the ports a run's programs listen on.
+
+| Crate | Version | Licence | Pulled in by |
+|---|---|---|---|
+| portable-pty | 0.9.0 | MIT | host (shells) |
+| alacritty_terminal | 0.26.0 | Apache-2.0 | host (the terminal screen) |
+| vte | 0.15.0 | Apache-2.0 OR MIT | alacritty_terminal |
+| filedescriptor, nix, winreg | 0.8.3, 0.28.0, 0.10.1 | MIT | portable-pty |
+| serial2 | 0.2.39 | BSD-2-Clause OR Apache-2.0 | portable-pty |
+| shell-words, shared_library, downcast-rs, lazy_static | 1.1.1, 0.1.9, 1.2.1, 1.5.1 | MIT/Apache-2.0 | portable-pty |
+| winapi and its gnu shims | 0.3.9, 0.4.0 | MIT/Apache-2.0 | portable-pty (Windows) |
+| miow | 0.6.1 | MIT OR Apache-2.0 | alacritty_terminal (Windows) |
+| polling, piper, concurrent-queue, crossbeam-utils, fastrand | 3.11.0, 0.2.5, 2.5.0, 0.8.23, 2.5.0 | Apache-2.0 OR MIT | alacritty_terminal |
+| parking_lot, parking_lot_core, lock_api, scopeguard | 0.12.5, 0.9.12, 0.4.14, 1.2.0 | MIT OR Apache-2.0 | alacritty_terminal |
+| regex-automata, regex-syntax, aho-corasick | 0.4.18, 0.8.11, 1.1.5 | MIT OR Apache-2.0 (aho-corasick Unlicense OR MIT) | alacritty_terminal |
+| unicode-width, bitflags, cursor-icon, home, signal-hook | 0.2.3, 1.3.2/2.13.2, 1.2.0, 0.5.12, 0.4.6 | MIT OR Apache-2.0 (cursor-icon also Zlib) | alacritty_terminal |
+| rustix, rustix-openpty, linux-raw-sys | 1.1.6, 0.2.0, 0.12.1 | Apache-2.0 WITH LLVM-exception OR Apache-2.0 OR MIT | Linux and macOS builds |
+| thiserror, thiserror-impl, arrayvec, cfg_aliases, hermit-abi, redox_syscall | various | MIT OR Apache-2.0 (cfg_aliases, redox_syscall MIT) | the above |
+| windows-sys | 0.52, 0.59, 0.61 | MIT OR Apache-2.0 | ports (process list, TCP tables), the above |
+
+### Qt modules added for video and pages (added 2026-11-07)
+
+Official Qt 6.12.0 MSVC 2022 binaries for the two modules, installed into the Qt the desktop app builds and runs against.
+
+| Part | Licence | How it's used |
+|---|---|---|
+| Qt Multimedia 6.12.0 | LGPL-3.0 | dynamically linked (video in the Files rail) |
+| Qt WebView 6.12.0 (WebView2 backend) | LGPL-3.0 | dynamically linked (the Browser rail); the page engine is Windows' own WebView2 runtime |
+| FFmpeg libraries shipped with Qt Multimedia (avcodec, avformat, avutil, swresample, swscale) | LGPL-2.1+ (Qt's LGPL build) | dynamically linked, unmodified |
+
 ## Web app (`web/`, added 2026-11-07)
 
 Built with Node; only Svelte's runtime ships, inside the built files the host serves.

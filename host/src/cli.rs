@@ -139,6 +139,14 @@ impl Session {
         }
     }
 
+    pub fn pid(&self) -> Option<u32> {
+        match self {
+            Session::Claude(s) => s.pid(),
+            Session::Codex(s) => s.pid(),
+            Session::Agy(s) => s.pid(),
+        }
+    }
+
     pub fn items_used(&self) -> u64 {
         match self {
             Session::Claude(s) => s.items_used(),

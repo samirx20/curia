@@ -11,12 +11,23 @@ Rectangle {
     property var teams: []
     property var subagents: []
     property string tab: "session"
-    property var listing: ({ git: true, files: [] })
+    property var listing: ({ git: true, root: "", branch: null, files: [] })
     property var opened: null
     property string mono: ""
     signal listFiles()
     signal openFile(string path)
     signal closeFile()
+    property alias terminal: terminal
+    property alias files: filesItem
+    property alias browser: browserItem
+    property var ports: []
+    signal refreshPorts()
+    property var shells: []
+    signal termStart(int cols, int rows)
+    signal termOpen(string id)
+    signal termInput(string id, string data)
+    signal termResize(string id, int cols, int rows)
+    readonly property var views: ({ session: ["session", "Session"], files: ["folder", "Files"], terminal: ["terminal", "Terminal"], browser: ["web", "Browser"] })
     readonly property var team: thread ? teams.find(t => t.id === thread.team_id) || null : null
     readonly property var run: thread ? threads.filter(t => t.root_id === thread.root_id && t.id !== thread.id) : []
 
@@ -33,12 +44,38 @@ Rectangle {
             Layout.preferredHeight: 46
             Layout.leftMargin: theme.pad
             Layout.rightMargin: theme.pad
-            Icon { name: rail.tab === "files" ? "folder" : "session"; size: 15; color: theme.text3 }
-            Text { text: rail.tab === "files" ? "Files" : "Session"; color: theme.text; font.weight: Font.DemiBold; Layout.fillWidth: true; leftPadding: 4 }
+            Icon { name: (rail.views[rail.tab] || rail.views.session)[0]; size: 15; color: theme.text3 }
+            Text { text: (rail.views[rail.tab] || rail.views.session)[1]; color: theme.text; font.weight: Font.DemiBold; Layout.fillWidth: true; leftPadding: 4 }
         }
         Divider {}
 
+        Terminal {
+            id: terminal
+            visible: rail.tab === "terminal"
+            Layout.fillWidth: true
+            Layout.fillHeight: true
+            thread: rail.thread
+            shells: rail.shells
+            mono: rail.mono
+            onStart: (c, r) => rail.termStart(c, r)
+            onOpen: id => rail.termOpen(id)
+            onInput: (id, d) => rail.termInput(id, d)
+            onResize: (id, c, r) => rail.termResize(id, c, r)
+        }
+
+        Browser {
+            id: browserItem
+            visible: rail.tab === "browser"
+            Layout.fillWidth: true
+            Layout.fillHeight: true
+            thread: rail.thread
+            ports: rail.ports
+            mono: rail.mono
+            onRefreshPorts: rail.refreshPorts()
+        }
+
         Files {
+            id: filesItem
             visible: rail.tab === "files"
             Layout.fillWidth: true
             Layout.fillHeight: true
@@ -46,6 +83,7 @@ Rectangle {
             listing: rail.listing
             opened: rail.opened
             mono: rail.mono
+            base: host.httpUrl()
             onOpenFile: path => rail.openFile(path)
             onBack: rail.closeFile()
         }

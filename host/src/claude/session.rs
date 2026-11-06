@@ -90,6 +90,10 @@ impl ClaudeSession {
     }
 
     /// Item ids the thread has used so far (store it; the next process continues from it).
+    pub fn pid(&self) -> Option<u32> {
+        self.proc.pid()
+    }
+
     pub fn items_used(&self) -> u64 {
         lock(&self.mapper).items_used()
     }

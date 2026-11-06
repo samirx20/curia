@@ -29,6 +29,8 @@ ApplicationWindow {
         rail.tab = view
         railOpen = true
         if (view === "files") listFiles()
+        if (view === "terminal") listShells()
+        if (view === "browser") listPorts()
     }
     property string message: ""
     property var settings: ({})
@@ -37,6 +39,7 @@ ApplicationWindow {
     // The open panel over the page: "", "inbox", "usage", "picker", "newrun".
     property string panel: host.arg("--show") === "files" ? "" : host.arg("--show")
     property alias page: page
+    property alias rail: rail
     function lastMerge() { return conversation.lastMerge() }
     function handBacks() { return conversation.handBacks() }
 
@@ -54,6 +57,7 @@ ApplicationWindow {
         onEvent: json => win.pushed(JSON.parse(json))
         onClosed: reason => win.message = "The host closed the link: " + reason
         onActivity: (threadId, kind) => win.refresh()
+        onTerminal: json => rail.terminal.shown(JSON.parse(json))
         Component.onCompleted: start(arg("--data"))
     }
 
@@ -68,17 +72,35 @@ ApplicationWindow {
         send("settings", "settings_get")
         if (rail.tab === "files" && currentId !== "") listFiles()
     }
-    function listFiles() { send("files", "thread_files", { thread_id: currentId }) }
+    function listFiles() { send("files", "thread_tree", { thread_id: currentId }) }
+    property var shells: []
+    property var ports: []
+    function listPorts() { if (currentId !== "") send("ports", "thread_ports", { thread_id: currentId }) }
+    function listShells() { if (currentId !== "") send("shells", "terminal_list", { thread_id: currentId }) }
+    function openShell(id) { rail.terminal.current = id; send("shell:open", "terminal_open", { id: id }) }
     function openFile(path) {
-        opened = { path: path }
-        send("file:read", "file_read", { thread_id: currentId, path: path })
-        send("file:diff", "file_diff", { thread_id: currentId, path: path })
+        const entry = listing.files.find(f => f.path === path) || {}
+        opened = { path: path, status: entry.status || null }
+        const media = /\.(png|jpe?g|gif|webp|svg|mp4|mov|webm|m4v)$/i.test(path)
+        if (!media) {
+            send("file:read", "file_read", { thread_id: currentId, path: path })
+            send("file:diff", "file_diff", { thread_id: currentId, path: path })
+        }
+        if (media && entry.status !== "deleted") send("file:link", "file_link", { thread_id: currentId, path: path })
+        // An image that changed can be compared with its last committed version.
+        if (media && entry.status === "modified") send("file:head", "file_link", { thread_id: currentId, path: path, rev: "HEAD" })
     }
     function open(id) {
         currentId = id
         opened = null
         conversation.clear()
         if (rail.tab === "files") listFiles()
+        rail.terminal.current = ""
+        rail.terminal.view = null
+        shells = []
+        if (rail.tab === "terminal") listShells()
+        ports = []
+        if (rail.tab === "browser") listPorts()
         send("open:" + id, "thread_open", { thread_id: id, after_seq: null })
     }
     function replied(tag, value) {
@@ -103,10 +125,24 @@ ApplicationWindow {
             opened = Object.assign({}, opened, value)
         } else if (tag === "file:diff" && opened && value.path === opened.path) {
             opened = Object.assign({}, opened, { patch: value.patch })
+        } else if (tag === "file:link" && opened) {
+            opened = Object.assign({}, opened, { url: value.url })
+        } else if (tag === "file:head" && opened) {
+            opened = Object.assign({}, opened, { headUrl: value.url })
         } else if (tag === "created") {
             panel = ""
             refresh()
             open(value.id)
+        } else if (tag === "ports") {
+            ports = value
+        } else if (tag === "shells") {
+            shells = value
+            if (rail.terminal.current === "" && value.length) openShell(value[value.length - 1].id)
+        } else if (tag === "shell:started") {
+            listShells()
+            openShell(value.id)
+        } else if (tag === "shell:open") {
+            rail.terminal.shown(value)
         } else if (tag === "refresh-after") {
             refresh()
         }
@@ -162,6 +198,8 @@ ApplicationWindow {
                 spacing: 2
                 Btn { kind: "icon"; icon: "session"; chosen: win.railOpen && rail.tab === "session"; onClicked: win.showRail("session") }
                 Btn { kind: "icon"; icon: "folder"; chosen: win.railOpen && rail.tab === "files"; onClicked: win.showRail("files") }
+                Btn { kind: "icon"; icon: "terminal"; chosen: win.railOpen && rail.tab === "terminal"; onClicked: win.showRail("terminal") }
+                Btn { kind: "icon"; icon: "web"; chosen: win.railOpen && rail.tab === "browser"; onClicked: win.showRail("browser") }
             }
         }
     }
@@ -211,7 +249,15 @@ ApplicationWindow {
             onListFiles: win.listFiles()
             onOpenFile: path => win.openFile(path)
             onCloseFile: win.opened = null
-            Layout.preferredWidth: 300
+            shells: win.shells
+            ports: win.ports
+            onRefreshPorts: win.listPorts()
+            onTermStart: (c, r) => win.send("shell:started", "terminal_start", { thread_id: win.currentId, cols: c, rows: r })
+            onTermOpen: id => win.openShell(id)
+            onTermInput: (id, d) => win.send("term-input", "terminal_input", { id: id, data: d })
+            onTermResize: (id, c, r) => win.send("term-input", "terminal_resize", { id: id, cols: c, rows: r })
+            // The design's widths: 300 for Session and Files, 520 for a file, the terminal and the browser.
+            Layout.preferredWidth: tab === "terminal" || tab === "browser" || (tab === "files" && win.opened !== null) ? 520 : 300
             Layout.fillHeight: true
             thread: win.current
             threads: win.threads

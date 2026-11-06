@@ -5,6 +5,7 @@
 //! only (`crate::tls`), for phones.
 mod auth;
 mod conn;
+mod filelink;
 mod signin;
 mod tls;
 mod web;
@@ -53,7 +54,11 @@ pub async fn serve(
     if let Some(u) = &remote_url {
         println!("Phones use {u}");
     }
-    let app = Router::new().route("/ws", get(upgrade)).with_state((host, gate)).fallback(get(web::file));
+    let app = Router::new()
+        .route("/ws", get(upgrade))
+        .route("/file/{token}", get(filelink::serve))
+        .with_state((host, gate))
+        .fallback(get(web::file));
     let (stop, stopped) = tokio::sync::watch::channel(false);
     if let Some(r) = remote {
         let tcp = TcpListener::bind((r.ip, r.port)).await.with_context(|| format!("could not listen on {}:{}", r.ip, r.port))?;
@@ -81,6 +86,8 @@ async fn upgrade(ws: WebSocketUpgrade, State((host, gate)): State<AppState>) -> 
 mod tests;
 #[cfg(test)]
 mod tests_devices;
+#[cfg(test)]
+mod tests_terminal;
 
 /// 244 random bits from two v4 UUIDs.
 fn new_token() -> String {

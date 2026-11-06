@@ -144,7 +144,8 @@ pub fn required(call: &Call) -> Role {
     match call {
         Call::ThreadsList | Call::ThreadOpen { .. } | Call::ThreadHistory { .. } | Call::TeamsList | Call::SettingsGet
         | Call::InboxList | Call::ThreadFiles { .. } | Call::FileRead { .. } | Call::FileDiff { .. }
-        | Call::PushKey | Call::PushSubscribe { .. } => Role::View,
+        | Call::PushKey | Call::PushSubscribe { .. } | Call::TerminalList { .. } | Call::TerminalOpen { .. }
+        | Call::ThreadTree { .. } | Call::FileLink { .. } | Call::ThreadPorts { .. } => Role::View,
         Call::ThreadAnswer { .. } => Role::Approve,
         _ => Role::Owner,
     }

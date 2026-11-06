@@ -43,6 +43,29 @@ pub enum Call {
     DeviceRevoke { device_id: String },
     /// The host's Web Push public key (base64url), to subscribe a browser with.
     PushKey,
+    /// Every file in a thread's folder, with `added`/`modified`/`deleted` where git says so.
+    ThreadTree { thread_id: String },
+    /// A link (`/file/<token>`, ten minutes) to a file's bytes; `rev: "HEAD"` for its last
+    /// committed version.
+    FileLink {
+        thread_id: String,
+        path: String,
+        #[serde(default, skip_serializing_if = "Option::is_none")]
+        rev: Option<String>,
+    },
+    /// The TCP ports the thread's programs listen on (for the browser rail).
+    ThreadPorts { thread_id: String },
+    /// A thread's terminals (shells the host runs in its folder).
+    TerminalList { thread_id: String },
+    /// Starts a shell in a thread's folder; open it with `terminal_open`.
+    TerminalStart { thread_id: String, cols: u16, rows: u16 },
+    /// Shows a terminal: answers with its screen, then sends `terminal` notifications as it changes.
+    TerminalOpen { id: String },
+    /// Keys typed into a terminal, as the bytes a terminal sends.
+    TerminalInput { id: String, data: String },
+    /// Resizes a terminal (one size for everyone: the last resize wins).
+    TerminalResize { id: String, cols: u16, rows: u16 },
+    TerminalClose { id: String },
     /// Sends this device's notifications to a browser push subscription (its endpoint and
     /// the `p256dh` and `auth` keys, base64url). Paired devices only.
     PushSubscribe { endpoint: String, p256dh: String, auth: String },
@@ -195,6 +218,8 @@ impl Notification {
     /// `kind` = the event's type). Lists that span every thread (the inbox, the sidebar)
     /// refresh on it.
     pub const ACTIVITY: &'static str = "activity";
+    /// A terminal's screen changed: `{id, title, screen, exited}`.
+    pub const TERMINAL: &'static str = "terminal";
 }
 
 /// Error codes (JSON-RPC reserves -32768..-32000 for its own).

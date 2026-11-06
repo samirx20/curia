@@ -19,6 +19,12 @@ fn main() {
         "qml/StatusMark.qml",
         "qml/TeamBadge.qml",
         "qml/Btn.qml",
+        "qml/Terminal.qml",
+        "qml/FileTree.qml",
+        "qml/FileView.qml",
+        "qml/VideoView.qml",
+        "qml/Browser.qml",
+        "qml/WebPage.qml",
     ]))
     .qt_module("Gui")
     .qt_module("Qml")

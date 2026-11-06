@@ -32,6 +32,11 @@ pub mod qobject {
         #[qinvokable]
         fn arg(self: &HostLink, name: &QString) -> QString;
 
+        /// The host's web address (`http://127.0.0.1:<port>`), for file links; "" before it's known.
+        #[qinvokable]
+        #[cxx_name = "httpUrl"]
+        fn http_url(self: &HostLink) -> QString;
+
         /// One of the app's asset folders (`fonts`, `providers`), as a `file:` URL ending in `/`.
         #[qinvokable]
         #[cxx_name = "assetUrl"]
@@ -54,6 +59,10 @@ pub mod qobject {
         /// Something happened in a thread the window doesn't have open.
         #[qsignal]
         fn activity(self: Pin<&mut HostLink>, thread_id: QString, kind: QString);
+
+        /// A terminal this app opened changed (`{id, title, screen, exited}` as JSON).
+        #[qsignal]
+        fn terminal(self: Pin<&mut HostLink>, json: QString);
     }
 
     impl cxx_qt::Threading for HostLink {}
@@ -109,6 +118,10 @@ impl qobject::HostLink {
                                 let (t, k) = (QString::from(&thread_id), QString::from(&kind));
                                 qt.queue(move |mut h| h.as_mut().activity(t, k))
                             }
+                            Incoming::Terminal(v) => {
+                                let json = QString::from(&v.to_string());
+                                qt.queue(move |mut h| h.as_mut().terminal(json))
+                            }
                         };
                         if sent.is_err() {
                             return; // the window is gone
@@ -161,6 +174,16 @@ impl qobject::HostLink {
         let beside = std::env::current_exe().ok().and_then(|e| e.parent().map(|d| d.join(&folder)));
         let dir = beside.filter(|d| d.is_dir()).unwrap_or_else(|| std::path::Path::new(env!("CARGO_MANIFEST_DIR")).join(&folder));
         QString::from(&format!("file:///{}/", dir.to_string_lossy().replace('\\', "/")))
+    }
+
+    fn http_url(&self) -> QString {
+        let data = self.arg(&QString::from("--data")).to_string();
+        let url = std::fs::read_to_string(std::path::Path::new(&data).join("link.json"))
+            .ok()
+            .and_then(|t| serde_json::from_str::<serde_json::Value>(&t).ok())
+            .and_then(|v| v["url"].as_str().map(|u| u.replace("ws://", "http://").trim_end_matches("/ws").to_string()))
+            .unwrap_or_default();
+        QString::from(&url)
     }
 
     fn arg(&self, name: &QString) -> QString {

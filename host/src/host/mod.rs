@@ -8,6 +8,8 @@ mod inbox;
 mod live;
 mod ops;
 mod quota;
+mod tree;
+pub use tree::committed;
 
 #[cfg(test)]
 mod tests;
@@ -46,6 +48,10 @@ pub struct Host {
     asks: Mutex<HashMap<String, (String, oneshot::Sender<Decision>)>>,
     /// The host's own Web Push key (VAPID).
     pub push: crate::push::Keys,
+    /// Shells running in threads' folders.
+    pub terms: Arc<crate::term::Terminals>,
+    /// Short-lived links to files' bytes (`file_link`).
+    file_links: Mutex<HashMap<String, tree::Grant>>,
     _lock: std::fs::File,
 }
 
@@ -75,6 +81,8 @@ impl Host {
             tokens: Mutex::new(HashMap::new()),
             asks: Mutex::new(HashMap::new()),
             push: crate::push::Keys::load_or_make(data_dir)?,
+            terms: Arc::default(),
+            file_links: Mutex::new(HashMap::new()),
             _lock: lock_file,
         };
         Ok((Arc::new(host), recovered))

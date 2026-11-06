@@ -19,6 +19,8 @@ pub enum Incoming {
     Closing(String),
     /// Something happened in a thread this client doesn't follow (its id, and the event's type).
     Activity { thread_id: String, kind: String },
+    /// A terminal this client opened changed: `{id, title, screen, exited}`.
+    Terminal(Value),
 }
 
 /// The calls waiting for a reply; `None` once the connection has closed, so a later call
@@ -117,6 +119,9 @@ fn dispatch(m: Value, pending: &Pending, events: &mpsc::UnboundedSender<Incoming
             let p = &m["params"];
             let (thread_id, kind) = (p["thread_id"].as_str().unwrap_or("").to_string(), p["kind"].as_str().unwrap_or("").to_string());
             let _ = events.send(Incoming::Activity { thread_id, kind });
+        }
+        Some(Notification::TERMINAL) => {
+            let _ = events.send(Incoming::Terminal(m["params"].clone()));
         }
         Some(Notification::CLOSING) => {
             let reason = m["params"]["reason"].as_str().unwrap_or("no reason given").to_string();

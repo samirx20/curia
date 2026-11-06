@@ -37,6 +37,7 @@ pub async fn handle(host: Arc<Host>, gate: Arc<Gate>, socket: WebSocket) {
     let mut revoked = gate.revoked.subscribe();
     let mut who: Option<Who> = None;
     let mut nonce: Option<String> = None;
+    let mut watching: HashMap<String, tokio::task::JoinHandle<()>> = HashMap::new();
     loop {
         let msg = tokio::select! {
             m = stream.next() => match m { Some(Ok(m)) => m, _ => break },
@@ -89,6 +90,20 @@ pub async fn handle(host: Arc<Host>, gate: Arc<Gate>, socket: WebSocket) {
             open_thread(&host, &subs, &outbox, req.id, thread_id, *after_seq);
             continue;
         }
+        if let Call::TerminalOpen { id } = &req.call {
+            let reply = match host.terms.get(id) {
+                Ok(shell) => {
+                    let view = crate::term::view(&shell);
+                    if let Some(old) = watching.insert(id.clone(), tokio::spawn(watch_terminal(shell, outbox.clone()))) {
+                        old.abort();
+                    }
+                    ok(req.id, view)
+                }
+                Err(e) => error(req.id, code::FAILED, &format!("{e:#}")),
+            };
+            outbox.push(Out::Reply(reply));
+            continue;
+        }
         let result = match signin::devices(&host, &gate, &me, &req.call) {
             Some(r) => r,
             None => answer_or_dispatch(&host, &me, req.call.clone()).await,
@@ -99,6 +114,20 @@ pub async fn handle(host: Arc<Host>, gate: Arc<Gate>, socket: WebSocket) {
         }));
     }
     forwarder.abort();
+    for (_, w) in watching {
+        w.abort();
+    }
+}
+
+/// Sends a terminal's screen whenever it changes, at most about 25 times a second.
+async fn watch_terminal(shell: Arc<crate::term::Shell>, outbox: Outbox) {
+    let mut changed = shell.version.subscribe();
+    while changed.changed().await.is_ok() {
+        tokio::time::sleep(std::time::Duration::from_millis(40)).await;
+        changed.borrow_and_update();
+        let params = crate::term::view(&shell);
+        outbox.push(Out::Note(json!({"jsonrpc": "2.0", "method": Notification::TERMINAL, "params": params})));
+    }
 }
 
 /// Runs a call; an answer is checked for the device's signature first and logged with who gave it.
@@ -220,6 +249,19 @@ async fn dispatch(host: &Arc<Host>, call: Call) -> Result<Value> {
             host.answer(&thread_id, &request_id, &decision).await.map(|_| Value::Null)?
         }
         Call::ThreadInterrupt { thread_id } => host.interrupt(&thread_id).await.map(|_| Value::Null)?,
+        Call::TerminalList { thread_id } => host.terms.list(&thread_id),
+        Call::ThreadTree { thread_id } => host.thread_tree(&thread_id).await?,
+        Call::ThreadPorts { thread_id } => host.thread_ports(&thread_id)?,
+        Call::FileLink { thread_id, path, rev } => host.file_link(&thread_id, &path, rev.as_deref())?,
+        Call::TerminalStart { thread_id, cols, rows } => {
+            let cwd = host.store.thread_get(&thread_id)?.cwd;
+            let shell = host.terms.start(&thread_id, cwd.into(), crate::term::Size { cols: cols.clamp(20, 400), rows: rows.clamp(5, 200) }).await?;
+            crate::term::view(&shell)
+        }
+        Call::TerminalInput { id, data } => host.terms.get(&id)?.input(&data).map(|_| Value::Null)?,
+        Call::TerminalResize { id, cols, rows } => host.terms.get(&id)?.resize(crate::term::Size { cols, rows }).map(|_| Value::Null)?,
+        Call::TerminalClose { id } => host.terms.close(&id).map(|_| Value::Null)?,
+        Call::TerminalOpen { .. } => bail!("terminal_open is handled before dispatch"),
         Call::Hello { .. } | Call::Challenge | Call::HelloDevice { .. } | Call::Pair { .. } => bail!("already signed in"),
         Call::PairCode { .. } | Call::DevicesList | Call::DeviceRevoke { .. } | Call::PushKey | Call::PushSubscribe { .. } => {
             bail!("device calls are handled before dispatch")

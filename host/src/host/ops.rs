@@ -113,3 +113,13 @@ pub(crate) async fn snapshot(cwd: &str, label: &'static str) -> Result<Option<St
     let cwd = PathBuf::from(cwd);
     tokio::task::spawn_blocking(move || checkpoint::snapshot(&cwd, label)).await?
 }
+
+impl Host {
+    /// The ports the thread's programs (its CLI, its shells, and what they started) listen on.
+    pub fn thread_ports(&self, thread_id: &str) -> Result<serde_json::Value> {
+        self.store.thread_get(thread_id)?;
+        let mut roots: Vec<u32> = self.live_of(thread_id).and_then(|l| l.session.pid()).into_iter().collect();
+        roots.extend(self.terms.pids(thread_id));
+        Ok(serde_json::json!(crate::ports::listening(&roots)))
+    }
+}

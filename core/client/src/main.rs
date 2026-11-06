@@ -5,6 +5,7 @@
 //!   curia --data <dir> move (--thread <id> | --last) --team N | settings | set --key K --value V | inbox
 //!   curia --data <dir> answer --thread <id> --request <id> [--deny]
 //!   curia --data <dir> pair [--role owner|approve|view] [--minutes N] | devices | unpair --device <id>
+//!   curia --data <dir> terminals (--thread <id> | --last) | terminal --id <id> [--type TEXT]
 //!   curia --data <dir> watch (--thread <id> | --last) [--after N]
 //!   curia --data <dir> chat (--thread <id> | --last)
 use anyhow::{Context, Result, bail};
@@ -16,7 +17,7 @@ use std::path::PathBuf;
 use std::sync::{Arc, Mutex};
 use tokio::io::{AsyncBufReadExt, BufReader};
 
-const USAGE: &str = "usage: curia --data <dir> (threads | teams | team-add --name N --config-dir <dir> | new --team N --cwd <dir> [--model M] [--effort E] [--mode M] | move (--thread <id> | --last) --team N | settings | set --key K --value V | inbox | answer --thread <id> --request <id> [--deny] | pair [--role R] | devices | unpair --device <id> | watch (--thread <id> | --last) [--after N] | chat (--thread <id> | --last))";
+const USAGE: &str = "usage: curia --data <dir> (threads | teams | team-add --name N --config-dir <dir> | new --team N --cwd <dir> [--model M] [--effort E] [--mode M] | move (--thread <id> | --last) --team N | settings | set --key K --value V | inbox | answer --thread <id> --request <id> [--deny] | pair [--role R] | devices | unpair --device <id> | terminals (--thread <id> | --last) | terminal --id <id> [--type TEXT] | watch (--thread <id> | --last) [--after N] | chat (--thread <id> | --last))";
 
 #[tokio::main]
 async fn main() -> Result<()> {
@@ -103,6 +104,28 @@ async fn main() -> Result<()> {
             println!("Open on the device: {page}#pair={code}");
             Ok(())
         }
+        Some("terminals") => {
+            let thread_id = thread_id(&link, &flags).await?;
+            for t in parse::<Vec<serde_json::Value>>(link.call(Call::TerminalList { thread_id }).await?)? {
+                println!("{}  {}{}", t["id"].as_str().unwrap_or(""), t["title"].as_str().unwrap_or(""), if t["exited"] == true { " (ended)" } else { "" });
+            }
+            Ok(())
+        }
+        Some("terminal") => {
+            // A second client on the same terminal: optionally types a line, then prints the screen.
+            let id = flags.get("id").cloned().context("--id is required")?;
+            if let Some(text) = flags.get("type") {
+                link.call(Call::TerminalInput { id: id.clone(), data: format!("{text}\r") }).await?;
+                tokio::time::sleep(std::time::Duration::from_millis(1500)).await;
+            }
+            let v = link.call(Call::TerminalOpen { id }).await?;
+            let s = &v["screen"];
+            for line in s["lines"].as_array().into_iter().flatten() {
+                println!("{}", line.as_array().into_iter().flatten().map(|r| r["t"].as_str().unwrap_or("")).collect::<String>());
+            }
+            println!("-- {} {}x{}, cursor at row {} column {}", v["title"].as_str().unwrap_or(""), s["cols"], s["rows"], s["cursor"][0], s["cursor"][1]);
+            Ok(())
+        }
         Some("devices") => {
             for d in parse::<Vec<serde_json::Value>>(link.call(Call::DevicesList).await?)? {
                 println!("{}  {:7}  {}", d["id"].as_str().unwrap_or(""), d["role"].as_str().unwrap_or(""), d["name"].as_str().unwrap_or(""));
@@ -182,7 +205,7 @@ async fn watch(link: &Link, mut events: tokio::sync::mpsc::UnboundedReceiver<Inc
                 println!("{n} {}", serde_json::to_string(&e.event)?);
             }
             Incoming::Closing(reason) => println!("host closed the connection: {reason}"),
-            Incoming::Activity { .. } => {}
+            Incoming::Activity { .. } | Incoming::Terminal(_) => {}
         }
     }
     println!("last event #{}", last.unwrap_or(0));

@@ -110,6 +110,10 @@ impl AgySession {
         Ok(Vec::new())
     }
 
+    pub fn pid(&self) -> Option<u32> {
+        self.proc.pid()
+    }
+
     pub fn items_used(&self) -> u64 {
         lock(&self.mapper).items_used()
     }

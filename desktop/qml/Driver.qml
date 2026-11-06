@@ -5,7 +5,7 @@ import QtQuick
 // without someone at the screen. Steps:
 //   wait <ms> · newrun <title>|<folder>|<team>|<freedom> · send <text>
 //   until inbox|handback|merged|idle <timeout ms> · allow-inbox · undo-merge · open-team
-//   shot <png> · quit
+//   panel session|files|terminal|browser · go <address> · file <path> · view changes|file|preview|source|image|compare · shell (a shell in the thread's folder) · type <line> · shot <png> · quit
 Item {
     id: driver
     property var win
@@ -48,6 +48,18 @@ Item {
         } else if (verb === "open-team") {
             const t = win.threads.find(x => x.parent_id === win.currentId)
             if (t) win.open(t.id)
+        } else if (verb === "panel") {
+            win.showRail(arg)
+        } else if (verb === "go") {
+            win.rail.browser.go(arg)
+        } else if (verb === "file") {
+            win.openFile(arg)
+        } else if (verb === "view") {
+            win.rail.files.viewer.view = arg
+        } else if (verb === "shell") {
+            win.send("shell:started", "terminal_start", { thread_id: win.currentId, cols: win.rail.terminal.fitCols, rows: win.rail.terminal.fitRows })
+        } else if (verb === "type") {
+            win.send("term-input", "terminal_input", { id: win.rail.terminal.current, data: arg + "\r" })
         } else if (verb === "shot") {
             win.page.grabToImage(r => { r.saveToFile(arg); log("saved " + arg); next() })
             return

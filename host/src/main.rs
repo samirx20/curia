@@ -14,6 +14,7 @@ mod host;
 mod link;
 mod links;
 mod mcp;
+mod ports;
 mod process;
 mod push;
 mod quota;
@@ -22,6 +23,7 @@ mod rules;
 mod record;
 mod scrub;
 mod store;
+mod term;
 mod tls;
 
 use anyhow::{Context, Result, bail};
@@ -117,6 +119,7 @@ async fn serve(args: &[String]) -> Result<()> {
     let control_room = mcp::start(host.clone()).await?;
     host.start_ticker();
     push::start(host.clone());
+    host.terms.start_reaper();
     host.continue_after_restart(&recovered).await?;
     println!("Control room (MCP) at {control_room}");
     let shutdown = async {
