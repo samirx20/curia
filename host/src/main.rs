@@ -1,25 +1,31 @@
-//! Curia's host. For now it has two developer commands:
-//!   curia-host dev --config-dir <dir> --cwd <dir> [--model M] [--effort E] [--mode M] [--resume ID] [--record FILE]
+//! Curia's host. For now it has developer commands:
+//!   curia-host dev --data <dir> (--thread <id> | --last | --config-dir <dir> --cwd <dir> [--model M] [--effort E] [--mode M])
 //!   curia-host replay <recording.jsonl>
 //!   curia-host scrub <live recording> <fixture>
 mod claude;
 mod dev;
+mod git;
+mod host;
 mod process;
 mod record;
 mod scrub;
+mod store;
 
 use anyhow::{Context, Result, bail};
 use std::path::PathBuf;
 
-const USAGE: &str = "usage:\n  curia-host dev --config-dir <dir> --cwd <dir> [--model M] [--effort E] [--mode M] [--resume ID] [--record FILE]\n  curia-host replay <recording.jsonl>\n  curia-host scrub <live recording> <fixture>";
+const USAGE: &str = "usage:
+  curia-host dev --data <dir> (--thread <id> | --last | --config-dir <dir> --cwd <dir> [--model M] [--effort E] [--mode M])
+  curia-host replay <recording.jsonl>
+  curia-host scrub <live recording> <fixture>";
 
 #[tokio::main]
 async fn main() -> Result<()> {
     let args: Vec<String> = std::env::args().skip(1).collect();
     match args.first().map(String::as_str) {
         Some("dev") => {
-            let (launch, record) = dev_args(&args[1..])?;
-            dev::run(launch, record).await
+            let (data, pick) = dev_args(&args[1..])?;
+            dev::run(data, pick).await
         }
         Some("replay") => replay(args.get(1).context(USAGE)?),
         Some("scrub") => {
@@ -32,34 +38,45 @@ async fn main() -> Result<()> {
     }
 }
 
-fn dev_args(args: &[String]) -> Result<(claude::Launch, Option<PathBuf>)> {
-    let mut launch = claude::Launch {
-        config_dir: PathBuf::new(),
-        cwd: std::env::current_dir()?,
+fn dev_args(args: &[String]) -> Result<(PathBuf, dev::Pick)> {
+    let mut data = None;
+    let mut pick = None;
+    let mut t = store::NewThread {
+        title: "dev".into(),
+        cli: "claude".into(),
+        config_dir: String::new(),
+        cwd: String::new(),
         model: None,
         effort: None,
         permission_mode: "manual".into(),
-        resume: None,
     };
-    let mut record = None;
     let mut it = args.iter();
     while let Some(flag) = it.next() {
+        if flag == "--last" {
+            pick = Some(dev::Pick::Last);
+            continue;
+        }
         let value = it.next().with_context(|| format!("{flag} needs a value"))?.clone();
         match flag.as_str() {
-            "--config-dir" => launch.config_dir = value.into(),
-            "--cwd" => launch.cwd = value.into(),
-            "--model" => launch.model = Some(value),
-            "--effort" => launch.effort = Some(value),
-            "--mode" => launch.permission_mode = value,
-            "--resume" => launch.resume = Some(value),
-            "--record" => record = Some(PathBuf::from(value)),
+            "--data" => data = Some(PathBuf::from(value)),
+            "--thread" => pick = Some(dev::Pick::Thread(value)),
+            "--config-dir" => t.config_dir = value,
+            "--cwd" => t.cwd = value,
+            "--model" => t.model = Some(value),
+            "--effort" => t.effort = Some(value),
+            "--mode" => t.permission_mode = value,
             _ => bail!("unknown flag {flag}\n{USAGE}"),
         }
     }
-    if launch.config_dir.as_os_str().is_empty() {
-        bail!("--config-dir is required: the team's own Claude config folder (never your everyday one)");
-    }
-    Ok((launch, record))
+    let data = data.context("--data is required: the host's data folder")?;
+    let pick = match pick {
+        Some(p) => p,
+        None if t.config_dir.is_empty() || t.cwd.is_empty() => {
+            bail!("a new thread needs --config-dir (the team's Claude config folder) and --cwd\n{USAGE}")
+        }
+        None => dev::Pick::New(t),
+    };
+    Ok((data, pick))
 }
 
 /// Replays a recording and checks it produces the events recorded live.

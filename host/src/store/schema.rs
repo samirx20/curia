@@ -1,0 +1,66 @@
+//! The database schema. Each entry upgrades it by one version (`PRAGMA user_version`).
+//! Never edit a shipped entry; append a new one.
+
+pub const MIGRATIONS: &[&str] = &[
+    // 1: threads, the event log (the source of truth), and the tables kept in step with it.
+    "CREATE TABLE threads (
+        id TEXT PRIMARY KEY,
+        title TEXT NOT NULL,
+        cli TEXT NOT NULL,
+        config_dir TEXT NOT NULL,
+        cwd TEXT NOT NULL,
+        model TEXT,
+        effort TEXT,
+        permission_mode TEXT NOT NULL,
+        native_session_id TEXT,
+        items_used INTEGER NOT NULL DEFAULT 0,
+        status TEXT NOT NULL DEFAULT 'idle',
+        created_at INTEGER NOT NULL,
+        updated_at INTEGER NOT NULL
+    );
+    CREATE TABLE events (
+        seq INTEGER PRIMARY KEY AUTOINCREMENT,
+        thread_id TEXT NOT NULL REFERENCES threads(id) ON DELETE CASCADE,
+        turn_id TEXT,
+        at_ms INTEGER NOT NULL,
+        body TEXT NOT NULL
+    );
+    CREATE INDEX events_by_thread ON events(thread_id, seq);
+    CREATE TABLE turns (
+        id TEXT PRIMARY KEY,
+        thread_id TEXT NOT NULL REFERENCES threads(id) ON DELETE CASCADE,
+        prompt TEXT,
+        status TEXT NOT NULL,
+        started_at INTEGER NOT NULL,
+        ended_at INTEGER,
+        cost_usd REAL,
+        error TEXT,
+        checkpoint_before TEXT,
+        checkpoint_after TEXT
+    );
+    CREATE INDEX turns_by_thread ON turns(thread_id, started_at);
+    CREATE INDEX turns_running ON turns(status) WHERE status = 'running';
+    CREATE TABLE requests (
+        thread_id TEXT NOT NULL REFERENCES threads(id) ON DELETE CASCADE,
+        request_id TEXT NOT NULL,
+        turn_id TEXT,
+        kind TEXT NOT NULL,
+        tool_name TEXT NOT NULL,
+        input TEXT NOT NULL,
+        status TEXT NOT NULL,
+        created_at INTEGER NOT NULL,
+        resolved_at INTEGER,
+        PRIMARY KEY (thread_id, request_id)
+    );
+    CREATE INDEX requests_pending ON requests(status) WHERE status = 'pending';
+    CREATE TABLE subagents (
+        thread_id TEXT NOT NULL REFERENCES threads(id) ON DELETE CASCADE,
+        task_id TEXT NOT NULL,
+        tool_use_id TEXT,
+        description TEXT NOT NULL,
+        status TEXT NOT NULL,
+        started_at INTEGER NOT NULL,
+        ended_at INTEGER,
+        PRIMARY KEY (thread_id, task_id)
+    );",
+];
