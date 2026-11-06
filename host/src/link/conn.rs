@@ -1,0 +1,153 @@
+//! One client connection: sign-in, requests, and the threads it follows.
+//!
+//! Opening a thread can't miss or repeat an event: the connection listens to the host's
+//! events before it reads the log, holds that thread's events while it reads, then passes on
+//! only those newer than what the client was sent.
+use super::open::{info, last_seq, open, wire};
+use super::outbox::{Out, Outbox};
+use crate::host::{Host, HostEvent};
+use crate::store::NewThread;
+use anyhow::{Result, bail};
+use axum::extract::ws::{Message, WebSocket};
+use curia_core::protocol::{Call, Request, RpcError, WireEvent, code};
+use futures_util::StreamExt;
+use serde_json::{Value, json};
+use std::collections::HashMap;
+use std::sync::{Arc, Mutex};
+use tokio::sync::broadcast::error::RecvError;
+
+enum Sub {
+    /// Being opened: events wait here until the client has its starting point.
+    Opening(Vec<HostEvent>),
+    /// Open: the newest stored event the client has been sent.
+    Open { last: i64 },
+}
+
+type Subs = Arc<Mutex<HashMap<String, Sub>>>;
+
+pub async fn handle(host: Arc<Host>, token: Arc<String>, socket: WebSocket) {
+    let (sink, mut stream) = socket.split();
+    let outbox = Outbox::start(sink);
+    let subs: Subs = Arc::default();
+    let forwarder = tokio::spawn(forward(host.clone(), subs.clone(), outbox.clone()));
+    let mut signed_in = false;
+    while let Some(Ok(msg)) = stream.next().await {
+        let Message::Text(text) = msg else {
+            if let Message::Close(_) = msg {
+                break;
+            }
+            continue;
+        };
+        let req: Request = match serde_json::from_str(&text) {
+            Ok(r) => r,
+            Err(e) => {
+                outbox.push(Out::Reply(error(0, code::INVALID, &format!("not a request: {e}"))));
+                continue;
+            }
+        };
+        match (&req.call, signed_in) {
+            (Call::Hello { token: t }, _) if t.as_str() == token.as_str() => {
+                signed_in = true;
+                outbox.push(Out::Reply(ok(req.id, json!({"host": "curia", "version": env!("CARGO_PKG_VERSION")}))));
+            }
+            (_, false) => {
+                outbox.push(Out::Reply(error(req.id, code::UNAUTHORIZED, "send hello with the host's token first")));
+                outbox.close("not signed in");
+                break;
+            }
+            (Call::ThreadOpen { thread_id, after_seq }, true) => open_thread(&host, &subs, &outbox, req.id, thread_id, *after_seq),
+            (call, true) => {
+                let reply = match dispatch(&host, call.clone()).await {
+                    Ok(v) => ok(req.id, v),
+                    Err(e) => error(req.id, code::FAILED, &format!("{e:#}")),
+                };
+                outbox.push(Out::Reply(reply));
+            }
+        }
+    }
+    forwarder.abort();
+}
+
+fn open_thread(host: &Host, subs: &Subs, outbox: &Outbox, id: u64, thread_id: &str, after: Option<i64>) {
+    subs.lock().unwrap().insert(thread_id.to_string(), Sub::Opening(Vec::new()));
+    let opened = match open(&host.store, thread_id, after) {
+        Ok(o) => o,
+        Err(e) => {
+            subs.lock().unwrap().remove(thread_id);
+            outbox.push(Out::Reply(error(id, code::FAILED, &format!("{e:#}"))));
+            return;
+        }
+    };
+    let last = last_seq(&opened).or(after).unwrap_or(0);
+    let mut subs = subs.lock().unwrap();
+    outbox.push(Out::Reply(ok(id, serde_json::to_value(&opened).unwrap_or(Value::Null))));
+    if let Some(Sub::Opening(held)) = subs.insert(thread_id.to_string(), Sub::Open { last }) {
+        for e in held {
+            send(&mut subs, outbox, e);
+        }
+    }
+}
+
+/// Passes host events on for the threads this client follows.
+async fn forward(host: Arc<Host>, subs: Subs, outbox: Outbox) {
+    let mut rx = host.subscribe();
+    loop {
+        match rx.recv().await {
+            Ok(e) => send(&mut subs.lock().unwrap(), &outbox, e),
+            Err(RecvError::Lagged(_)) => {
+                outbox.close("missed events; reconnect to get a fresh snapshot");
+                return;
+            }
+            Err(RecvError::Closed) => return,
+        }
+    }
+}
+
+fn send(subs: &mut HashMap<String, Sub>, outbox: &Outbox, e: HostEvent) {
+    match subs.get_mut(&e.thread_id) {
+        None => {}
+        Some(Sub::Opening(held)) => held.push(e),
+        Some(Sub::Open { last }) => {
+            if let Some(seq) = e.seq {
+                if seq <= *last {
+                    return; // already in what the client was sent
+                }
+                *last = seq;
+            }
+            outbox.push(Out::Event(WireEvent { thread_id: e.thread_id, seq: e.seq, event: e.event }));
+        }
+    }
+}
+
+async fn dispatch(host: &Arc<Host>, call: Call) -> Result<Value> {
+    let result = match call {
+        Call::ThreadsList => json!(host.store.threads()?.iter().map(info).collect::<Vec<_>>()),
+        Call::ThreadCreate { thread: t } => {
+            let row = host.create_thread(&NewThread {
+                title: t.title, cli: t.cli, config_dir: t.config_dir, cwd: t.cwd,
+                model: t.model, effort: t.effort, permission_mode: t.permission_mode,
+            })?;
+            json!(info(&row))
+        }
+        Call::ThreadHistory { thread_id, before_seq, limit } => {
+            let page = host.store.events_before(&thread_id, before_seq, limit.min(500))?;
+            json!(page.into_iter().map(|s| wire(&thread_id, s)).collect::<Vec<_>>())
+        }
+        Call::ThreadSend { thread_id, text } => host.send(&thread_id, &text).await.map(|_| Value::Null)?,
+        Call::ThreadAnswer { thread_id, request_id, decision } => {
+            host.answer(&thread_id, &request_id, &decision).await.map(|_| Value::Null)?
+        }
+        Call::ThreadInterrupt { thread_id } => host.interrupt(&thread_id).await.map(|_| Value::Null)?,
+        Call::Hello { .. } => bail!("already signed in"),
+        Call::ThreadOpen { .. } => bail!("thread_open is handled before dispatch"),
+    };
+    Ok(result)
+}
+
+fn ok(id: u64, result: Value) -> Value {
+    json!({"jsonrpc": "2.0", "id": id, "result": result})
+}
+
+fn error(id: u64, code: i64, message: &str) -> Value {
+    json!({"jsonrpc": "2.0", "id": id, "error": RpcError { code, message: message.to_string() }})
+}

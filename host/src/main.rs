@@ -1,4 +1,5 @@
-//! Curia's host. For now it has developer commands:
+//! Curia's host.
+//!   curia-host serve --data <dir> [--port N]     run the host for clients (see the `curia` client)
 //!   curia-host dev --data <dir> (--thread <id> | --last | --config-dir <dir> --cwd <dir> [--model M] [--effort E] [--mode M])
 //!   curia-host replay <recording.jsonl>
 //!   curia-host scrub <live recording> <fixture>
@@ -6,6 +7,7 @@ mod claude;
 mod dev;
 mod git;
 mod host;
+mod link;
 mod process;
 mod record;
 mod scrub;
@@ -15,6 +17,7 @@ use anyhow::{Context, Result, bail};
 use std::path::PathBuf;
 
 const USAGE: &str = "usage:
+  curia-host serve --data <dir> [--port N]
   curia-host dev --data <dir> (--thread <id> | --last | --config-dir <dir> --cwd <dir> [--model M] [--effort E] [--mode M])
   curia-host replay <recording.jsonl>
   curia-host scrub <live recording> <fixture>";
@@ -23,6 +26,7 @@ const USAGE: &str = "usage:
 async fn main() -> Result<()> {
     let args: Vec<String> = std::env::args().skip(1).collect();
     match args.first().map(String::as_str) {
+        Some("serve") => serve(&args[1..]).await,
         Some("dev") => {
             let (data, pick) = dev_args(&args[1..])?;
             dev::run(data, pick).await
@@ -77,6 +81,30 @@ fn dev_args(args: &[String]) -> Result<(PathBuf, dev::Pick)> {
         None => dev::Pick::New(t),
     };
     Ok((data, pick))
+}
+
+async fn serve(args: &[String]) -> Result<()> {
+    let (mut data, mut port) = (None, 0u16);
+    let mut it = args.iter();
+    while let Some(flag) = it.next() {
+        let value = it.next().with_context(|| format!("{flag} needs a value"))?;
+        match flag.as_str() {
+            "--data" => data = Some(PathBuf::from(value)),
+            "--port" => port = value.parse().context("--port takes a number")?,
+            _ => bail!("unknown flag {flag}\n{USAGE}"),
+        }
+    }
+    let (host, recovered) = host::Host::open(&data.context("--data is required")?)?;
+    if !recovered.threads.is_empty() {
+        println!("Recovered after a restart: {} turn(s) cut off, {} approval(s) expired.", recovered.turns, recovered.requests);
+    }
+    let shutdown = async {
+        let _ = tokio::signal::ctrl_c().await;
+    };
+    let result = link::serve(host.clone(), port, shutdown).await;
+    host.close_all().await;
+    tokio::time::sleep(std::time::Duration::from_millis(1500)).await; // let CLIs exit cleanly
+    result
 }
 
 /// Replays a recording and checks it produces the events recorded live.

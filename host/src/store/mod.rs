@@ -1,11 +1,13 @@
 //! The host's state in one SQLite file. The `events` table is the source of truth; `turns`,
 //! `requests`, `subagents` and the thread's status are kept in step with it in the same
 //! transaction (`record`). Settings follow what Agent Hub learned (CARRY_OVER §8).
+mod pages;
 mod record;
 mod recover;
 mod schema;
 mod threads;
 
+pub use record::Stored;
 pub use recover::Recovered;
 pub use threads::{NewThread, ThreadRow};
 

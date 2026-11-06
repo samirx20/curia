@@ -26,7 +26,8 @@ pub struct HostEvent {
 pub struct Host {
     pub store: Store,
     data_dir: PathBuf,
-    claude_exe: PathBuf,
+    /// Found the first time a Claude thread starts, so a host without Claude still opens.
+    claude_exe: std::sync::OnceLock<PathBuf>,
     live: Mutex<HashMap<String, Arc<Live>>>,
     events: broadcast::Sender<HostEvent>,
     _lock: std::fs::File,
@@ -50,7 +51,7 @@ impl Host {
         let host = Host {
             store,
             data_dir: data_dir.to_path_buf(),
-            claude_exe: find_claude()?,
+            claude_exe: std::sync::OnceLock::new(),
             live: Mutex::new(HashMap::new()),
             events: broadcast::channel(4096).0,
             _lock: lock_file,
@@ -129,6 +130,34 @@ impl Host {
 
     pub fn is_live(&self, thread_id: &str) -> bool {
         lock(&self.live).contains_key(thread_id)
+    }
+
+    pub fn data_dir(&self) -> &Path {
+        &self.data_dir
+    }
+
+    fn claude_exe(&self) -> Result<PathBuf> {
+        if let Some(p) = self.claude_exe.get() {
+            return Ok(p.clone());
+        }
+        let p = find_claude()?;
+        Ok(self.claude_exe.get_or_init(|| p).clone())
+    }
+
+    /// Stores and broadcasts events as if a CLI had produced them (tests of everything
+    /// downstream of the adapters).
+    #[cfg(test)]
+    pub fn inject(&self, thread_id: &str, events: &[Event]) -> Result<()> {
+        for e in events {
+            if let Event::TextDelta { .. } = e {
+                let _ = self.events.send(HostEvent { thread_id: thread_id.into(), seq: None, event: e.clone() });
+                continue;
+            }
+            for s in self.store.record(thread_id, std::slice::from_ref(e))? {
+                let _ = self.events.send(HostEvent { thread_id: thread_id.into(), seq: Some(s.seq), event: s.event });
+            }
+        }
+        Ok(())
     }
 
     fn transcript_path(&self, thread_id: &str) -> Result<PathBuf> {

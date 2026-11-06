@@ -35,7 +35,7 @@ impl Host {
             resume: row.native_session_id.clone(),
         };
         let recorder = Recorder::create(&self.transcript_path(&row.id)?)?;
-        let (session, rx) = ClaudeSession::start(&self.claude_exe, &launch, row.items_used, Some(recorder)).await?;
+        let (session, rx) = ClaudeSession::start(&self.claude_exe()?, &launch, row.items_used, Some(recorder)).await?;
         let live = Arc::new(Live { session, pending_before: Mutex::new(None) });
         lock(&self.live).insert(row.id.clone(), live.clone());
         tokio::spawn(self.clone().pump(row.id.clone(), row.cwd.clone(), live.clone(), rx));
