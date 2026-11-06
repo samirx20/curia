@@ -25,6 +25,19 @@ fn main() {
         "qml/VideoView.qml",
         "qml/Browser.qml",
         "qml/WebPage.qml",
+        "qml/Toggle.qml",
+        "qml/Segmented.qml",
+        "qml/SettingCard.qml",
+        "qml/SettingRow.qml",
+        "qml/Settings.qml",
+        "qml/SettingsHost.qml",
+        "qml/SettingsAccess.qml",
+        "qml/SettingsTeams.qml",
+        "qml/SettingsRouting.qml",
+        "qml/SettingsFreedom.qml",
+        "qml/SettingsOther.qml",
+        "qml/Search.qml",
+        "qml/SettingsHosts.qml",
     ]))
     .qt_module("Gui")
     .qt_module("Qml")

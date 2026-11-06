@@ -5,7 +5,8 @@ import QtQuick
 // without someone at the screen. Steps:
 //   wait <ms> · newrun <title>|<folder>|<team>|<freedom> · send <text>
 //   until inbox|handback|merged|idle <timeout ms> · allow-inbox · undo-merge · open-team
-//   panel session|files|terminal|browser · go <address> · file <path> · view changes|file|preview|source|image|compare · shell (a shell in the thread's folder) · type <line> · shot <png> · quit
+//   settings <section> · panel session|files|terminal|browser · go <address> · file <path> · view changes|file|preview|source|image|compare · shell (a shell in the thread's folder) · type <line> · shot <png> · quit
+//   pairhost <pairing link> · usehost <id|local> · until remote|local <timeout ms> (following that host, its threads listed)
 Item {
     id: driver
     property var win
@@ -14,7 +15,9 @@ Item {
     property string waitingFor: ""
     property real deadline: 0
 
+    property bool started: false
     function start(script) {
+        started = true
         steps = script.split(";").map(s => s.trim()).filter(s => s !== "")
         at = 0
         next()
@@ -50,6 +53,19 @@ Item {
             if (t) win.open(t.id)
         } else if (verb === "panel") {
             win.showRail(arg)
+        } else if (verb === "settings") {
+            win.settingsOpen = true
+            win.settingsPage.section = arg || "host"
+        } else if (verb === "search") {
+            win.openSearch()
+            win.send("search", "search", { query: arg })
+        } else if (verb === "pair") {
+            win.settingsPage.send("s:pair", "pair_code", { role: "approve", minutes: 5 })
+        } else if (verb === "pairhost") {
+            win.pairState = "pairing"
+            host.pairHost(arg, "")
+        } else if (verb === "usehost") {
+            host.useHost(arg)
         } else if (verb === "go") {
             win.rail.browser.go(arg)
         } else if (verb === "file") {
@@ -74,6 +90,8 @@ Item {
         if (waitingFor === "inbox") return win.inbox.length > 0
         if (waitingFor === "handback") return win.lastMerge() !== "" || win.handBacks() > 0
         if (waitingFor === "merged") return win.lastMerge() !== ""
+        if (waitingFor === "remote") return host.connected && host.hostId !== "local" && win.threads.length > 0
+        if (waitingFor === "local") return host.connected && host.hostId === "local" && win.threads.length > 0
         if (waitingFor === "idle") return win.current !== null && win.current.status === "idle"
         return true
     }

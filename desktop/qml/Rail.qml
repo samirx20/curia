@@ -10,6 +10,7 @@ Rectangle {
     property var threads: []
     property var teams: []
     property var subagents: []
+    property var summary: null
     property string tab: "session"
     property var listing: ({ git: true, root: "", branch: null, files: [] })
     property var opened: null
@@ -161,6 +162,16 @@ Rectangle {
                             TeamBadge { team: rail.teams.find(t => t.id === modelData.team_id) || null; Layout.rightMargin: 4 }
                         }
                     }
+                }
+
+                Block {
+                    visible: rail.summary !== null && rail.thread !== null
+                    Heading { title: "Run"; note: rail.summary && rail.summary.started_ms ? "started " + theme.ago(rail.summary.started_ms) + " ago" : "" }
+                    Fact { name: "Threads"; value: rail.summary ? rail.summary.threads.length + (rail.summary.threads.filter(t => t.status === "running").length ? " · " + rail.summary.threads.filter(t => t.status === "running").length + " working" : "") : "" }
+                    Fact { name: "Hand-offs"; value: rail.summary ? rail.summary.hand_offs + " · " + rail.summary.results + " back" : "" }
+                    Fact { name: "Merged"; value: rail.summary ? rail.summary.merged + (rail.summary.undone ? " · " + rail.summary.undone + " undone" : "") : "" }
+                    Fact { name: "Approvals"; value: rail.summary ? rail.summary.approvals + (rail.summary.waiting ? " · " + rail.summary.waiting + " waiting" : "") : ""; tint: rail.summary && rail.summary.waiting ? theme.amber : theme.text }
+                    Fact { name: "Cost"; value: rail.summary && rail.summary.cost_usd !== null ? "$" + rail.summary.cost_usd.toFixed(3) + " (as the CLIs report it)" : "not reported" }
                 }
 
                 Block {

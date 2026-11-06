@@ -64,7 +64,7 @@ Item {
             Layout.fillWidth: true
             spacing: 6
             Icon { name: "folder"; size: 14; color: theme.text3 }
-            Text { Layout.fillWidth: true; text: tree.listing.root; elide: Text.ElideLeft; color: theme.text2; font.pixelSize: theme.small }
+            Text { Layout.fillWidth: true; text: tree.listing.root || ""; elide: Text.ElideLeft; color: theme.text2; font.pixelSize: theme.small }
             Text { visible: !!tree.listing.branch; text: tree.listing.branch || ""; color: theme.text3; font.pixelSize: theme.small; font.family: tree.mono }
         }
         RowLayout {

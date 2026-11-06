@@ -71,7 +71,8 @@ impl Host {
             };
             let out_until = c.limited_until.filter(|u| *u > now_ms());
             out.push(json!({
-                "id": t.id, "name": t.name, "cli": t.cli, "model": t.model, "busy_in_this_run": busy,
+                "id": t.id, "name": t.name, "cli": t.cli, "model": t.model, "effort": t.effort, "busy_in_this_run": busy,
+                "config_dir": t.config_dir, "signed_in": super::admin::signed_in(&t.cli, &t.config_dir),
                 "five_hour_percent_left": c.five_hour_left.map(f64::round), "five_hour_resets_at_ms": c.five_hour_resets_at,
                 "weekly_percent_left": c.weekly_left.map(f64::round), "weekly_resets_at_ms": c.weekly_resets_at,
                 "out_of_quota_until_ms": out_until,

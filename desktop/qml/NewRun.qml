@@ -10,6 +10,7 @@ Rectangle {
     property string folder: ""
     property string team: teams.length ? teams[0].name : ""
     property string freedom: "ask"
+    property string defaultFreedom: "ask"
     property string monoFamily: ""
     signal create(var params)
     signal close()
@@ -17,7 +18,7 @@ Rectangle {
     readonly property var chosenTeam: teams.find(t => t.name === team) || null
     readonly property bool agy: chosenTeam !== null && chosenTeam.cli === "agy"
     readonly property bool ready: title.text.trim() !== "" && path.text.trim() !== "" && team !== ""
-    onVisibleChanged: if (visible) { path.text = folder; title.forceActiveFocus() }
+    onVisibleChanged: if (visible) { path.text = folder; freedom = defaultFreedom; title.forceActiveFocus() }
 
     color: theme.raised
     radius: theme.radius

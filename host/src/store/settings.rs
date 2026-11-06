@@ -20,6 +20,10 @@ pub struct Settings {
     pub always_allow: Vec<String>,
     /// Approvals matching these are denied without asking.
     pub never_allow: Vec<String>,
+    /// The host's name on every device and in notifications (`None`: the machine's name).
+    pub host_name: Option<String>,
+    /// The freedom level new runs start with.
+    pub default_freedom: String,
 }
 
 impl Default for Settings {
@@ -31,6 +35,8 @@ impl Default for Settings {
             deny_unanswered_after_minutes: None,
             always_allow: Vec::new(),
             never_allow: Vec::new(),
+            host_name: None,
+            default_freedom: "ask".into(),
         }
     }
 }

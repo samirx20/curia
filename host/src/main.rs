@@ -1,5 +1,5 @@
 //! Curia's host.
-//!   curia-host serve --data <dir> [--port N] [--tailscale PORT] [--public-url URL]   run the host for clients (see the `curia` client)
+//!   curia-host serve [--data <dir>] [--port N] [--tailscale PORT] [--public-url URL]   run the host for clients (see the `curia` client)
 //!   curia-host dev --data <dir> (--thread <id> | --last | --config-dir <dir> --cwd <dir> [--model M] [--effort E] [--mode M])
 //!   curia-host replay <recording.jsonl>
 //!   curia-host scrub <live recording> <fixture>
@@ -30,7 +30,7 @@ use anyhow::{Context, Result, bail};
 use std::path::PathBuf;
 
 const USAGE: &str = "usage:
-  curia-host serve --data <dir> [--port N] [--tailscale PORT] [--public-url URL]
+  curia-host serve [--data <dir>] [--port N] [--tailscale PORT] [--public-url URL]
       --tailscale PORT: also serve the phone app over HTTPS on this machine's Tailscale name
       --public-url URL: where phones reach the host when something else serves it (tailscale serve)
   curia-host dev --data <dir> (--thread <id> | --last | --config-dir <dir> --cwd <dir> [--model M] [--effort E] [--mode M])
@@ -112,7 +112,12 @@ async fn serve(args: &[String]) -> Result<()> {
             _ => bail!("unknown flag {flag}\n{USAGE}"),
         }
     }
-    let (host, recovered) = host::Host::open(&data.context("--data is required")?)?;
+    // Without --data, the folder an installed host uses.
+    let data = data.unwrap_or_else(|| {
+        let base = std::env::var_os("LOCALAPPDATA").or_else(|| std::env::var_os("HOME")).unwrap_or_default();
+        PathBuf::from(base).join("Curia").join("data")
+    });
+    let (host, recovered) = host::Host::open(&data)?;
     if !recovered.threads.is_empty() {
         println!("Recovered after a restart: {} turn(s) cut off, {} approval(s) expired.", recovered.turns, recovered.requests);
     }

@@ -1,5 +1,6 @@
 //! The host: owns the data folder, the store and the live CLI processes. Every client
 //! action, and every control-room tool an agent calls, is one of its operations.
+mod admin;
 mod ask;
 mod control;
 mod deliver;
@@ -9,6 +10,7 @@ mod live;
 mod ops;
 mod quota;
 mod tree;
+pub use admin::qr;
 pub use tree::committed;
 
 #[cfg(test)]
@@ -50,6 +52,8 @@ pub struct Host {
     pub push: crate::push::Keys,
     /// Shells running in threads' folders.
     pub terms: Arc<crate::term::Terminals>,
+    /// When this host started (ms).
+    pub started_ms: i64,
     /// Short-lived links to files' bytes (`file_link`).
     file_links: Mutex<HashMap<String, tree::Grant>>,
     _lock: std::fs::File,
@@ -83,6 +87,7 @@ impl Host {
             push: crate::push::Keys::load_or_make(data_dir)?,
             terms: Arc::default(),
             file_links: Mutex::new(HashMap::new()),
+            started_ms: crate::store::now_ms(),
             _lock: lock_file,
         };
         Ok((Arc::new(host), recovered))

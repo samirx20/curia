@@ -16,6 +16,9 @@ Rectangle {
     signal openInbox()
     signal openUsage()
     signal newRun(string folder)
+    signal openSettings()
+    signal openSearch()
+    signal connectHost()
 
     color: theme.panel
     radius: theme.radius
@@ -48,7 +51,7 @@ Rectangle {
         spacing: 2
 
         Place { label: "New run"; icon: "plus"; hint: "Ctrl N"; onClicked: side.newRun("") }
-        Place { label: "Search"; icon: "search"; hint: "Ctrl K"; enabled: false }
+        Place { label: "Search"; icon: "search"; hint: "Ctrl K"; onClicked: side.openSearch() }
         Place { label: "Inbox"; icon: "inbox"; badge: side.inbox.length; onClicked: side.openInbox() }
         Item { Layout.preferredHeight: 8 }
 
@@ -149,27 +152,83 @@ Rectangle {
 
         Rectangle { Layout.fillWidth: true; Layout.bottomMargin: 4; height: 1; color: theme.line }
         Rectangle {
+            id: hostRow
             Layout.fillWidth: true
             height: theme.row
             radius: theme.radiusSmall
-            color: "transparent"
+            color: hostArea.containsMouse || switcher.visible ? theme.raised : "transparent"
             RowLayout {
                 anchors.fill: parent
                 anchors.leftMargin: 10
                 anchors.rightMargin: 10
                 spacing: 8
                 Icon { name: "host"; size: 15; color: theme.text2; stroke: 1.7 }
-                Text { text: "This computer"; color: theme.text; font.weight: Font.DemiBold }
+                Text { text: host.hostName; color: theme.text; font.weight: Font.DemiBold; elide: Text.ElideRight; Layout.maximumWidth: 120 }
                 Rectangle { width: 6; height: 6; radius: 3; color: side.connected ? theme.blue : theme.red }
-                Text { text: side.connected ? "Local" : "Offline"; color: theme.text3; font.pixelSize: theme.small; Layout.fillWidth: true }
+                Text { text: !side.connected ? "Offline" : host.hostId === "local" ? "Local" : "Remote"; color: theme.text3; font.pixelSize: theme.small; Layout.fillWidth: true }
                 Icon { name: "upDown"; size: 13; color: theme.text3; stroke: 2 }
+            }
+            MouseArea { id: hostArea; anchors.fill: parent; hoverEnabled: true; onClicked: { switcher.hosts = JSON.parse(host.hostsJson()); switcher.open() } }
+
+            // The host switcher: every host this app knows, and connecting to another.
+            Popup {
+                id: switcher
+                property var hosts: []
+                y: -height - 6
+                width: 250
+                padding: 6
+                background: Rectangle { radius: theme.radius; color: theme.raised; border.color: theme.line }
+                contentItem: ColumnLayout {
+                    spacing: 2
+                    Text { text: "Hosts"; color: theme.text3; font.pixelSize: theme.tiny; font.weight: Font.DemiBold; Layout.margins: 6 }
+                    Repeater {
+                        model: switcher.hosts
+                        delegate: Rectangle {
+                            required property var modelData
+                            Layout.fillWidth: true
+                            height: 40
+                            radius: theme.radiusSmall
+                            color: pick.containsMouse ? theme.selection : "transparent"
+                            RowLayout {
+                                anchors.fill: parent
+                                anchors.leftMargin: 8
+                                anchors.rightMargin: 8
+                                spacing: 8
+                                Icon { name: "host"; size: 14; color: theme.text2 }
+                                ColumnLayout {
+                                    Layout.fillWidth: true
+                                    spacing: 0
+                                    Text { text: modelData.name; color: theme.text; elide: Text.ElideRight; Layout.fillWidth: true }
+                                    Text { text: modelData.id === "local" ? "This computer" : modelData.where; color: theme.text3; font.pixelSize: theme.tiny; elide: Text.ElideRight; Layout.fillWidth: true }
+                                }
+                                Icon { visible: modelData.current; name: "check"; size: 14; color: theme.blue }
+                            }
+                            MouseArea { id: pick; anchors.fill: parent; hoverEnabled: true; onClicked: { switcher.close(); if (!modelData.current) host.useHost(modelData.id) } }
+                        }
+                    }
+                    Rectangle { Layout.fillWidth: true; height: 1; color: theme.line; Layout.topMargin: 2; Layout.bottomMargin: 2 }
+                    Rectangle {
+                        Layout.fillWidth: true
+                        height: 34
+                        radius: theme.radiusSmall
+                        color: connectArea.containsMouse ? theme.selection : "transparent"
+                        RowLayout {
+                            anchors.fill: parent
+                            anchors.leftMargin: 8
+                            spacing: 8
+                            Icon { name: "plus"; size: 14; color: theme.text2 }
+                            Text { text: "Connect to a host…"; color: theme.text }
+                        }
+                        MouseArea { id: connectArea; anchors.fill: parent; hoverEnabled: true; onClicked: { switcher.close(); side.connectHost() } }
+                    }
+                }
             }
         }
         RowLayout {
             Layout.fillWidth: true
             spacing: 2
             Place { label: "Usage"; icon: "usage"; dot: side.usageLow; Layout.fillWidth: true; Layout.preferredWidth: 1; onClicked: side.openUsage() }
-            Place { label: "Settings"; icon: "settings"; enabled: false; Layout.fillWidth: true; Layout.preferredWidth: 1 }
+            Place { label: "Settings"; icon: "settings"; Layout.fillWidth: true; Layout.preferredWidth: 1; onClicked: side.openSettings() }
         }
     }
 

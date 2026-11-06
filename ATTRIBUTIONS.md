@@ -204,6 +204,20 @@ Shells in a pseudo-terminal (ConPTY on Windows) with the screen kept on the host
 | thiserror, thiserror-impl, arrayvec, cfg_aliases, hermit-abi, redox_syscall | various | MIT OR Apache-2.0 (cfg_aliases, redox_syscall MIT) | the above |
 | windows-sys | 0.52, 0.59, 0.61 | MIT OR Apache-2.0 | ports (process list, TCP tables), the above |
 
+### Settings and packaging (added 2026-11-07)
+
+The host's resources in Settings, the pairing QR code, and what the Windows package carries.
+
+| Crate or part | Version | Licence | Pulled in by |
+|---|---|---|---|
+| sysinfo | 0.40.1 | MIT | host (processor, memory and disk in Settings) |
+| ntapi | 0.4.x | Apache-2.0 OR MIT | sysinfo (Windows) |
+| windows, windows-collections, windows-future, windows-numerics, windows-threading | 0.62.x | MIT OR Apache-2.0 | sysinfo (Windows) |
+| objc2-core-foundation, objc2-io-kit | 0.3.x | Zlib OR Apache-2.0 OR MIT | sysinfo (macOS only) |
+| qrcode | 0.14.1 | MIT OR Apache-2.0 | host (pairing QR code; no image features) |
+| Microsoft Visual C++ runtime (vcruntime140, msvcp140 and friends) | 14.44 | Microsoft Visual Studio redistributable terms | the Windows package carries them beside the programs, unmodified |
+| Qt runtime files placed by `windeployqt` | 6.12.0 | LGPL-3.0 | the Windows package, dynamically linked |
+
 ### Qt modules added for video and pages (added 2026-11-07)
 
 Official Qt 6.12.0 MSVC 2022 binaries for the two modules, installed into the Qt the desktop app builds and runs against.

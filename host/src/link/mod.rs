@@ -44,9 +44,11 @@ pub async fn serve(
 ) -> Result<()> {
     let listener = TcpListener::bind(("127.0.0.1", port)).await.with_context(|| format!("could not listen on port {port}"))?;
     let addr = listener.local_addr()?;
-    let gate = Arc::new(auth::Gate::new(new_token()));
     let url = format!("ws://{addr}/ws");
     let remote_url = public_url.or_else(|| remote.as_ref().map(|r| format!("https://{}:{}/", r.name, r.port)));
+    let mut gate = auth::Gate::new(new_token());
+    gate.public_url = remote_url.clone();
+    let gate = Arc::new(gate);
     let link = serde_json::json!({"url": url, "token": gate.token, "remote_url": remote_url});
     std::fs::write(host.data_dir().join("link.json"), link.to_string()).context("could not write link.json")?;
     println!("Curia host listening on {url}");

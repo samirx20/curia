@@ -61,10 +61,14 @@ pub fn devices(host: &Host, gate: &Gate, who: &Who, call: &Call) -> Option<Resul
             Who::Device { .. } => Err(anyhow::anyhow!("a push endpoint must be https")),
             Who::Local => Err(anyhow::anyhow!("only a paired device can receive notifications")),
         },
-        Call::PairCode { role, minutes } => Role::parse(role).map(|r| {
+        Call::PairCode { role, minutes } => Role::parse(role).and_then(|r| {
             let (code, expires) = gate.pair_code(r, *minutes);
-            json!({"code": code, "role": r.name(), "expires_at_ms": expires})
+            // The address a phone opens (the code in its fragment), and the same as a QR code.
+            let url = gate.public_url.as_ref().map(|u| format!("{u}#pair={code}"));
+            let qr = url.as_deref().map(crate::host::qr).transpose()?;
+            Ok(json!({"code": code, "role": r.name(), "expires_at_ms": expires, "url": url, "qr": qr}))
         }),
+        Call::DeviceSetRole { device_id, role } => host.store.device_set_role(device_id, role).map(|_| Value::Null),
         Call::DevicesList => host.store.devices().map(|d| json!(d)),
         Call::DeviceRevoke { device_id } => host.store.device_revoke(device_id).and_then(|found| {
             if !found {

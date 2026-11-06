@@ -11,6 +11,9 @@ use std::sync::{Arc, Mutex};
 use tokio::sync::{mpsc, oneshot};
 use tokio_tungstenite::tungstenite::Message;
 
+pub mod device;
+mod tls;
+
 /// Something the host pushed.
 #[derive(Debug)]
 pub enum Incoming {
@@ -31,6 +34,8 @@ pub struct Link {
     out: mpsc::UnboundedSender<Message>,
     pending: Pending,
     next_id: AtomicU64,
+    /// A paired device's key: its answers are signed with it.
+    signer: Option<p256::ecdsa::SigningKey>,
 }
 
 impl Link {
@@ -53,7 +58,10 @@ impl Link {
 
     /// Connects without signing in (a device then pairs or signs in with its own key).
     pub async fn open(url: &str) -> Result<(Link, mpsc::UnboundedReceiver<Incoming>)> {
-        let (ws, _) = tokio_tungstenite::connect_async(url).await.with_context(|| format!("could not reach the host at {url}"))?;
+        let connector = if url.starts_with("wss://") { Some(tokio_tungstenite::Connector::Rustls(tls::client()?)) } else { None };
+        let (ws, _) = tokio_tungstenite::connect_async_tls_with_config(url, None, false, connector)
+            .await
+            .with_context(|| format!("could not reach the host at {url}"))?;
         let (mut sink, mut stream) = ws.split();
         let (out, mut out_rx) = mpsc::unbounded_channel::<Message>();
         let (events, events_rx) = mpsc::unbounded_channel();
@@ -61,9 +69,11 @@ impl Link {
         tokio::spawn(async move {
             while let Some(m) = out_rx.recv().await {
                 if sink.send(m).await.is_err() {
-                    break;
+                    return;
                 }
             }
+            // The Link was dropped: close the connection, which also ends the reader below.
+            let _ = sink.send(Message::Close(None)).await;
         });
         let waiting = pending.clone();
         tokio::spawn(async move {
@@ -82,11 +92,14 @@ impl Link {
                 let _ = tx.send(Err(anyhow::anyhow!("the connection to the host closed")));
             }
         });
-        Ok((Link { out, pending, next_id: AtomicU64::new(1) }, events_rx))
+        Ok((Link { out, pending, next_id: AtomicU64::new(1), signer: None }, events_rx))
     }
 
     /// Sends a request and waits for its reply.
-    pub async fn call(&self, call: Call) -> Result<Value> {
+    pub async fn call(&self, mut call: Call) -> Result<Value> {
+        if let (Some(key), Call::ThreadAnswer { thread_id, request_id, decision, signature: signature @ None }) = (&self.signer, &mut call) {
+            *signature = Some(device::sign(key, &curia_core::signing::answer_message(thread_id, request_id, decision)));
+        }
         let id = self.next_id.fetch_add(1, Ordering::Relaxed);
         let (tx, rx) = oneshot::channel();
         match self.pending.lock().unwrap().as_mut() {

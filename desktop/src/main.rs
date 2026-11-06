@@ -1,7 +1,9 @@
 //! Curia's desktop app.
-//!   curia-desktop --data <host data folder> [--shot <png>]
+//!   curia-desktop [--data <host data folder>] [--shot <png>]
+//! Without `--data` it follows the host chosen last (at first, the installed one on this computer).
 //! `--shot` saves a picture of the window once it has shown the host's threads, then quits.
 mod bridge;
+mod hosts;
 
 use cxx_qt_lib::{QFont, QGuiApplication, QQmlApplicationEngine, QString, QUrl};
 

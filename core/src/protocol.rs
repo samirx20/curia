@@ -53,6 +53,30 @@ pub enum Call {
         #[serde(default, skip_serializing_if = "Option::is_none")]
         rev: Option<String>,
     },
+    /// This machine, its resources, and how devices reach it (Settings > Host).
+    HostInfo,
+    /// Renames a team or changes its default model or effort (an empty value clears them).
+    TeamUpdate {
+        id: String,
+        #[serde(default)]
+        name: Option<String>,
+        #[serde(default)]
+        model: Option<String>,
+        #[serde(default)]
+        effort: Option<String>,
+    },
+    /// Removes a team no thread uses.
+    TeamRemove { id: String },
+    /// Opens a console window on the host where the CLI signs an account in.
+    TeamSignIn { cli: String, config_dir: String },
+    /// Changes a paired device's role (`owner`, `approve`, `view`).
+    DeviceSetRole { device_id: String, role: String },
+    /// Starts the host when the person signs in to the host machine (or stops doing so).
+    AutostartSet { enabled: bool },
+    /// Threads whose title, or something said in them, contains the words.
+    Search { query: String },
+    /// A run's totals: threads, hand-offs, merges, approvals, cost and time.
+    RunSummary { thread_id: String },
     /// The TCP ports the thread's programs listen on (for the browser rail).
     ThreadPorts { thread_id: String },
     /// A thread's terminals (shells the host runs in its folder).

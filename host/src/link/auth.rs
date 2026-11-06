@@ -6,7 +6,6 @@
 use anyhow::{Context, Result, bail};
 use base64::Engine;
 use base64::engine::general_purpose::STANDARD as B64;
-use curia_core::Decision;
 use curia_core::protocol::Call;
 use p256::ecdsa::signature::Verifier;
 use p256::ecdsa::{Signature, VerifyingKey};
@@ -72,13 +71,15 @@ fn pair_for(minutes: Option<u32>) -> Duration {
 /// that a device was revoked (its connections close).
 pub struct Gate {
     pub token: String,
+    /// Where phones reach the host, for pairing addresses (none: this machine only).
+    pub public_url: Option<String>,
     pair: Mutex<Option<(String, Role, Instant)>>,
     pub revoked: broadcast::Sender<String>,
 }
 
 impl Gate {
     pub fn new(token: String) -> Gate {
-        Gate { token, pair: Mutex::new(None), revoked: broadcast::channel(16).0 }
+        Gate { token, public_url: None, pair: Mutex::new(None), revoked: broadcast::channel(16).0 }
     }
 
     /// A new one-time code for a device with `role`; any earlier code stops working.
@@ -108,18 +109,7 @@ pub fn nonce() -> String {
     uuid::Uuid::new_v4().simple().to_string()
 }
 
-pub fn sign_in_message(nonce: &str) -> String {
-    format!("curia-sign-in:{nonce}")
-}
-
-pub fn answer_message(thread_id: &str, request_id: &str, decision: &Decision) -> String {
-    let kind = match decision {
-        Decision::Allow => "allow",
-        Decision::Deny { .. } => "deny",
-        Decision::Answer { .. } => "answer",
-    };
-    format!("curia-answer:{thread_id}:{request_id}:{kind}")
-}
+pub use curia_core::signing::{answer_message, sign_in_message};
 
 /// Checks a device's signature of `message`. `public_key`: the uncompressed P-256 point;
 /// `signature`: r‖s (64 bytes), as WebCrypto makes them; both base64.
@@ -145,7 +135,8 @@ pub fn required(call: &Call) -> Role {
         Call::ThreadsList | Call::ThreadOpen { .. } | Call::ThreadHistory { .. } | Call::TeamsList | Call::SettingsGet
         | Call::InboxList | Call::ThreadFiles { .. } | Call::FileRead { .. } | Call::FileDiff { .. }
         | Call::PushKey | Call::PushSubscribe { .. } | Call::TerminalList { .. } | Call::TerminalOpen { .. }
-        | Call::ThreadTree { .. } | Call::FileLink { .. } | Call::ThreadPorts { .. } => Role::View,
+        | Call::ThreadTree { .. } | Call::FileLink { .. } | Call::ThreadPorts { .. }
+        | Call::Search { .. } | Call::RunSummary { .. } => Role::View,
         Call::ThreadAnswer { .. } => Role::Approve,
         _ => Role::Owner,
     }
@@ -154,6 +145,7 @@ pub fn required(call: &Call) -> Role {
 #[cfg(test)]
 mod tests {
     use super::*;
+    use curia_core::Decision;
     use p256::ecdsa::SigningKey;
     use p256::ecdsa::signature::Signer;
 

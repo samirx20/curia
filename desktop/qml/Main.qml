@@ -22,6 +22,13 @@ ApplicationWindow {
     readonly property var current: threads.find(t => t.id === currentId) || null
     property bool railOpen: true
     property bool sideOpen: true
+    property bool settingsOpen: host.arg("--show") === "settings"
+    property bool everConnected: false
+    property var searchResults: []
+    property var runSummary: null
+    // Bumped when the hosts this app knows change; "" / "pairing" / the result of a pairing.
+    property int hostsVersion: 0
+    property string pairState: ""
     readonly property var currentTeam: current ? teams.find(t => t.id === current.team_id) || null : null
     // Opens the rail on a view; the open view's button hides it again.
     function showRail(view) {
@@ -40,10 +47,15 @@ ApplicationWindow {
     property string panel: host.arg("--show") === "files" ? "" : host.arg("--show")
     property alias page: page
     property alias rail: rail
+    property alias settingsPage: settingsPage
     function lastMerge() { return conversation.lastMerge() }
     function handBacks() { return conversation.handBacks() }
 
     Driver { id: driver; win: win }
+    Shortcut { sequence: "Ctrl+N"; onActivated: { newRun.folder = ""; win.panel = "newrun" } }
+    Shortcut { sequence: "Ctrl+K"; onActivated: win.openSearch() }
+    Shortcut { sequence: "Esc"; onActivated: { if (win.panel !== "") win.panel = ""; else if (win.settingsOpen) win.settingsOpen = false } }
+    function openSearch() { searchResults = []; panel = "search"; search.focusField() }
 
     Theme { id: theme }
     FontLoader { id: inter; source: host.assetUrl("fonts") + "InterVariable.ttf" }
@@ -51,9 +63,27 @@ ApplicationWindow {
 
     HostLink {
         id: host
-        onConnectedChanged: if (connected) { win.refresh(); if (arg("--drive") !== "") driver.start(arg("--drive")) }
+        onConnectedChanged: if (connected) {
+            win.everConnected = true
+            win.refresh()
+            if (win.settingsOpen) settingsPage.refresh()
+            if (win.currentId !== "") win.open(win.currentId)
+            if (arg("--drive") !== "" && !driver.started) driver.start(arg("--drive"))
+        }
+        // Following another host: nothing from the last one stays on screen.
+        onHostIdChanged: {
+            win.everConnected = false
+            win.currentId = ""
+            win.threads = []
+            win.teams = []
+            win.inbox = []
+            win.opened = null
+            win.runSummary = null
+            conversation.clear()
+            win.hostsVersion++
+        }
         onReply: (tag, json) => win.replied(tag, JSON.parse(json))
-        onFailed: (tag, text) => win.message = text
+        onFailed: (tag, text) => { if (tag === "paired") win.pairState = text; else win.message = text }
         onEvent: json => win.pushed(JSON.parse(json))
         onClosed: reason => win.message = "The host closed the link: " + reason
         onActivity: (threadId, kind) => win.refresh()
@@ -102,8 +132,20 @@ ApplicationWindow {
         ports = []
         if (rail.tab === "browser") listPorts()
         send("open:" + id, "thread_open", { thread_id: id, after_seq: null })
+        runSummary = null
+        send("summary", "run_summary", { thread_id: id })
     }
     function replied(tag, value) {
+        if (tag === "paired") {
+            pairState = "Paired. Following it now."
+            hostsVersion++
+            host.useHost(value.id)
+            return
+        }
+        if (tag.startsWith("s:")) {
+            settingsPage.replied(tag, value)
+            return
+        }
         if (tag === "threads") {
             threads = value
             const want = host.arg("--open")
@@ -133,6 +175,10 @@ ApplicationWindow {
             panel = ""
             refresh()
             open(value.id)
+        } else if (tag === "search") {
+            searchResults = value
+        } else if (tag === "summary" && current && value) {
+            runSummary = value
         } else if (tag === "ports") {
             ports = value
         } else if (tag === "shells") {
@@ -223,6 +269,9 @@ ApplicationWindow {
             onOpenInbox: win.panel = "inbox"
             onOpenUsage: win.panel = "usage"
             onNewRun: folder => { newRun.folder = folder; win.panel = "newrun" }
+            onOpenSettings: win.settingsOpen = true
+            onOpenSearch: win.openSearch()
+            onConnectHost: { settingsPage.section = "hosts"; win.settingsOpen = true }
         }
         Conversation {
             id: conversation
@@ -263,8 +312,17 @@ ApplicationWindow {
             threads: win.threads
             teams: win.teams
             subagents: conversation.subagents
+            summary: win.runSummary
         }
     }
+    }
+
+    Settings {
+        id: settingsPage
+        anchors.fill: parent
+        visible: win.settingsOpen
+        win: win
+        onClose: win.settingsOpen = false
     }
 
     // Panels over the page; a click outside closes them.
@@ -310,9 +368,55 @@ ApplicationWindow {
         onConfigure: options => { win.panel = ""; win.send("refresh-after", "thread_configure", Object.assign({ thread_id: win.currentId, model: null, effort: null, freedom: null }, options)) }
         onClose: win.panel = ""
     }
+    Search {
+        id: search
+        visible: win.panel === "search"
+        anchors.horizontalCenter: parent.horizontalCenter
+        y: 90
+        threads: win.threads
+        teams: win.teams
+        results: win.searchResults
+        onQuery: text => win.send("search", "search", { query: text })
+        onPick: id => { win.panel = ""; win.open(id) }
+        onClose: win.panel = ""
+    }
+
+    // The host can't be reached: say so over the page, and keep trying (the bridge does).
+    Rectangle {
+        anchors.fill: parent
+        visible: win.everConnected && !host.connected
+        color: "#a0000000"
+        MouseArea { anchors.fill: parent; hoverEnabled: true }
+        Rectangle {
+            anchors.centerIn: parent
+            width: 420
+            height: lost.implicitHeight + 40
+            radius: theme.radius
+            color: theme.raised
+            border.color: theme.amber
+            ColumnLayout {
+                id: lost
+                x: 20; y: 20
+                width: parent.width - 40
+                spacing: 8
+                RowLayout {
+                    spacing: 10
+                    Icon { name: "warning"; size: 18; color: theme.amber }
+                    Text { text: "Can't reach the host"; color: theme.text; font.weight: Font.DemiBold; font.pixelSize: 15 }
+                }
+                Text {
+                    Layout.fillWidth: true; wrapMode: Text.Wrap; color: theme.text2
+                    text: /10061|refused|link\.json/.test(host.status) ? "The host isn't running on this computer right now." : host.status
+                }
+                Text { Layout.fillWidth: true; wrapMode: Text.Wrap; text: "Trying again every few seconds. Runs on the host keep going meanwhile; nothing here is lost."; color: theme.text3; font.pixelSize: theme.small }
+            }
+        }
+    }
+
     NewRun {
         id: newRun
         monoFamily: mono.name
+        defaultFreedom: win.settings.default_freedom || "ask"
         visible: win.panel === "newrun"
         anchors.centerIn: parent
         teams: win.teams

@@ -2,6 +2,7 @@
 pub mod action;
 pub mod event;
 pub mod protocol;
+pub mod signing;
 
 pub use action::Decision;
 pub use event::{Event, ItemId, MergeReport, RequestKind, Resolution, TextKind, TurnOutcome, UsageWindow};

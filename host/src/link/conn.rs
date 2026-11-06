@@ -250,6 +250,15 @@ async fn dispatch(host: &Arc<Host>, call: Call) -> Result<Value> {
         }
         Call::ThreadInterrupt { thread_id } => host.interrupt(&thread_id).await.map(|_| Value::Null)?,
         Call::TerminalList { thread_id } => host.terms.list(&thread_id),
+        Call::HostInfo => host.host_info().await?,
+        Call::TeamUpdate { id, name, model, effort } => {
+            host.store.team_update(&id, name.as_deref(), model.as_deref(), effort.as_deref()).map(|_| Value::Null)?
+        }
+        Call::TeamRemove { id } => host.store.team_remove(&id).map(|_| Value::Null)?,
+        Call::TeamSignIn { cli, config_dir } => host.team_sign_in(&cli, &config_dir).map(|_| Value::Null)?,
+        Call::AutostartSet { enabled } => host.autostart_set(enabled).map(|_| Value::Null)?,
+        Call::Search { query } => json!(host.store.search(&query, 30)?),
+        Call::RunSummary { thread_id } => host.store.run_summary(&host.store.thread_get(&thread_id)?.root_id)?,
         Call::ThreadTree { thread_id } => host.thread_tree(&thread_id).await?,
         Call::ThreadPorts { thread_id } => host.thread_ports(&thread_id)?,
         Call::FileLink { thread_id, path, rev } => host.file_link(&thread_id, &path, rev.as_deref())?,
@@ -263,7 +272,7 @@ async fn dispatch(host: &Arc<Host>, call: Call) -> Result<Value> {
         Call::TerminalClose { id } => host.terms.close(&id).map(|_| Value::Null)?,
         Call::TerminalOpen { .. } => bail!("terminal_open is handled before dispatch"),
         Call::Hello { .. } | Call::Challenge | Call::HelloDevice { .. } | Call::Pair { .. } => bail!("already signed in"),
-        Call::PairCode { .. } | Call::DevicesList | Call::DeviceRevoke { .. } | Call::PushKey | Call::PushSubscribe { .. } => {
+        Call::PairCode { .. } | Call::DevicesList | Call::DeviceRevoke { .. } | Call::DeviceSetRole { .. } | Call::PushKey | Call::PushSubscribe { .. } => {
             bail!("device calls are handled before dispatch")
         }
         Call::ThreadOpen { .. } => bail!("thread_open is handled before dispatch"),
