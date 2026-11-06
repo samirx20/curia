@@ -1,0 +1,10 @@
+[package]
+name = "curia-core"
+description = "Curia's shared protocol: the events every CLI adapter produces and the actions clients send."
+version.workspace = true
+edition.workspace = true
+publish.workspace = true
+
+[dependencies]
+serde = { version = "1.0.229", features = ["derive"] }
+serde_json = "1.0.154"

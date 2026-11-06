@@ -1,0 +1,20 @@
+[workspace]
+resolver = "3"
+members = ["core", "host"]
+
+[workspace.package]
+version = "0.1.0"
+edition = "2024"
+publish = false
+
+[workspace.dependencies]
+curia-core = { path = "core" }
+
+# Small build output: no debug info in dev and test builds.
+[profile.dev]
+debug = 0
+
+[profile.release]
+codegen-units = 1
+lto = "thin"
+strip = true

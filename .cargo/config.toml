@@ -1,0 +1,4 @@
+# RAM on the dev laptop is tight (16 GB shared with Sam's own work and live CLIs):
+# two compile jobs at a time keeps a build under about 1.5 GB.
+[build]
+jobs = 2

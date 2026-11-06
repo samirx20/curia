@@ -3,6 +3,12 @@
 /AGENTS.md
 /CLAUDE.md
 /HANDOFF.md
+/NEED_DECISIONS.md
+
+# Live CLI recordings hold real prompts, paths and account details. Only scrubbed
+# copies may be committed, as test fixtures under host/tests/fixtures/.
+/recordings/
+*.recording.jsonl
 
 # Build output
 target/
