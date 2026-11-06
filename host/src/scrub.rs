@@ -24,7 +24,7 @@ pub fn scrub_file(input: &Path, output: &Path) -> Result<usize> {
     if let Some(email) = find_email(&text) {
         bail!("the scrubbed recording still contains an email address ({email}); not written");
     }
-    let replayed = record::replay_claude(&entries)?;
+    let replayed = record::replay(&entries)?;
     if replayed != record::recorded_events(&entries) {
         bail!("the scrubbed recording no longer replays to its recorded events; not written");
     }
@@ -34,15 +34,27 @@ pub fn scrub_file(input: &Path, output: &Path) -> Result<usize> {
 
 fn scrub(entries: Vec<Entry>, home: &str) -> Result<Vec<Entry>> {
     let mut out = Vec::new();
+    // Codex: ids of Curia's `account/*` requests. Their replies describe the account (its id,
+    // reset credits), and replays never read them.
+    let mut account_requests = std::collections::HashSet::new();
     for e in entries {
         let e = match e {
             Entry::Err { .. } => continue,
             Entry::Out { ms, line } => {
                 let v: Value = serde_json::from_str(&line)?;
+                if v.get("method").is_none() && v["id"].as_u64().is_some_and(|id| account_requests.contains(&id)) {
+                    continue;
+                }
                 let Some(v) = keep(v) else { continue };
                 Entry::Out { ms, line: clean(v, home).to_string() }
             }
-            Entry::In { ms, line } => Entry::In { ms, line: clean(serde_json::from_str(&line)?, home).to_string() },
+            Entry::In { ms, line } => {
+                let v: Value = serde_json::from_str(&line)?;
+                if let (Some(id), Some(true)) = (v["id"].as_u64(), v["method"].as_str().map(|m| m.starts_with("account/"))) {
+                    account_requests.insert(id);
+                }
+                Entry::In { ms, line: clean(v, home).to_string() }
+            }
             Entry::Event { ms, event } => {
                 Entry::Event { ms, event: serde_json::from_value(clean(serde_json::to_value(event)?, home))? }
             }
@@ -119,5 +131,20 @@ mod tests {
         assert!(keep(json!({"type": "system", "subtype": "commands_changed", "commands": []})).is_none());
         let init = keep(json!({"type": "system", "subtype": "init", "session_id": "s", "model": "m", "skills": ["x"]}));
         assert_eq!(init, Some(json!({"type": "system", "subtype": "init", "session_id": "s", "model": "m"})));
+    }
+
+    #[test]
+    fn replies_to_codex_account_requests_are_dropped() {
+        let line = |v: Value| v.to_string();
+        let entries = vec![
+            Entry::In { ms: 0, line: line(json!({"id": 3, "method": "account/rateLimits/read", "params": {}})) },
+            Entry::Out { ms: 1, line: line(json!({"id": 3, "result": {"accountId": "a-1"}})) },
+            Entry::In { ms: 2, line: line(json!({"id": 4, "method": "turn/start", "params": {}})) },
+            Entry::Out { ms: 3, line: line(json!({"id": 4, "result": {"turn": {"id": "t-9"}}})) },
+        ];
+        let kept = scrub(entries, r"C:\Users\Sam").unwrap();
+        let text = kept.iter().map(|e| serde_json::to_string(e).unwrap()).collect::<String>();
+        assert!(!text.contains("a-1"), "the account reply is gone: {text}");
+        assert!(text.contains("t-9"), "other replies stay: {text}");
     }
 }

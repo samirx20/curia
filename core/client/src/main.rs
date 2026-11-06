@@ -3,6 +3,7 @@
 //!   curia --data <dir> teams | team-add --name N --config-dir <dir> [--cli claude] [--model M] [--effort E]
 //!   curia --data <dir> new --team N --cwd <dir> [--title T] [--model M] [--effort E] [--mode M]
 //!   curia --data <dir> move (--thread <id> | --last) --team N | settings | set --key K --value V | inbox
+//!   curia --data <dir> answer --thread <id> --request <id> [--deny]
 //!   curia --data <dir> watch (--thread <id> | --last) [--after N]
 //!   curia --data <dir> chat (--thread <id> | --last)
 use anyhow::{Context, Result, bail};
@@ -14,7 +15,7 @@ use std::path::PathBuf;
 use std::sync::{Arc, Mutex};
 use tokio::io::{AsyncBufReadExt, BufReader};
 
-const USAGE: &str = "usage: curia --data <dir> (threads | teams | team-add --name N --config-dir <dir> | new --team N --cwd <dir> [--model M] [--effort E] [--mode M] | move (--thread <id> | --last) --team N | settings | set --key K --value V | inbox | watch (--thread <id> | --last) [--after N] | chat (--thread <id> | --last))";
+const USAGE: &str = "usage: curia --data <dir> (threads | teams | team-add --name N --config-dir <dir> | new --team N --cwd <dir> [--model M] [--effort E] [--mode M] | move (--thread <id> | --last) --team N | settings | set --key K --value V | inbox | answer --thread <id> --request <id> [--deny] | watch (--thread <id> | --last) [--after N] | chat (--thread <id> | --last))";
 
 #[tokio::main]
 async fn main() -> Result<()> {
@@ -24,8 +25,8 @@ async fn main() -> Result<()> {
     let mut it = args.iter();
     while let Some(a) = it.next() {
         match a.as_str() {
-            "--last" => {
-                flags.insert("last".into(), String::new());
+            "--last" | "--deny" => {
+                flags.insert(a[2..].to_string(), String::new());
             }
             f if f.starts_with("--") => {
                 flags.insert(f[2..].to_string(), it.next().with_context(|| format!("{f} needs a value"))?.clone());
@@ -90,6 +91,13 @@ async fn main() -> Result<()> {
                 println!("{}  {}  {}  in \"{}\" ({})", r["request_id"].as_str().unwrap_or(""), r["kind"].as_str().unwrap_or(""),
                     r["tool_name"].as_str().unwrap_or(""), r["thread_title"].as_str().unwrap_or(""), r["thread_id"].as_str().unwrap_or(""));
             }
+            Ok(())
+        }
+        Some("answer") => {
+            let thread_id = flags.get("thread").cloned().context("--thread is required")?;
+            let request_id = flags.get("request").cloned().context("--request is required")?;
+            let decision = if flags.contains_key("deny") { Decision::Deny { message: None } } else { Decision::Allow };
+            link.call(Call::ThreadAnswer { thread_id, request_id, decision }).await?;
             Ok(())
         }
         Some("team-add") => {

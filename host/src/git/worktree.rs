@@ -31,38 +31,11 @@ pub fn add(repo: &Path, path: &Path, branch: &str, base: &str) -> Result<()> {
 /// they pointed to in Agent Hub's main checkout.
 pub fn remove(repo: &Path, path: &Path) -> Result<()> {
     if path.exists() {
-        unlink_links(path)?;
+        crate::links::unlink_all(path, &[".git"])?;
         run(repo, &["worktree", "remove", &path.to_string_lossy()])?;
     }
     let _ = run(repo, &["worktree", "prune"]);
     Ok(())
-}
-
-fn unlink_links(dir: &Path) -> Result<()> {
-    for entry in std::fs::read_dir(dir)? {
-        let entry = entry?;
-        let path = entry.path();
-        let meta = std::fs::symlink_metadata(&path)?;
-        if meta.file_type().is_symlink() || is_junction(&path) {
-            // Removes the link only; on Windows a directory link is removed with remove_dir.
-            std::fs::remove_dir(&path).or_else(|_| std::fs::remove_file(&path))?;
-        } else if meta.is_dir() && entry.file_name() != ".git" {
-            unlink_links(&path)?;
-        }
-    }
-    Ok(())
-}
-
-#[cfg(windows)]
-fn is_junction(path: &Path) -> bool {
-    use std::os::windows::fs::MetadataExt;
-    const FILE_ATTRIBUTE_REPARSE_POINT: u32 = 0x400;
-    std::fs::symlink_metadata(path).is_ok_and(|m| m.file_attributes() & FILE_ATTRIBUTE_REPARSE_POINT != 0)
-}
-
-#[cfg(not(windows))]
-fn is_junction(_: &Path) -> bool {
-    false
 }
 
 #[cfg(test)]

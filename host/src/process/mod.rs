@@ -1,7 +1,9 @@
 //! Starting CLI processes: piped stdio, no console window, inside a Job Object.
 mod job;
+mod lines;
 
 pub use job::Job;
+pub use lines::{LineProcess, Output};
 
 use anyhow::{Context, Result};
 use tokio::process::{Child, Command};

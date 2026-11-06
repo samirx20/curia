@@ -36,6 +36,10 @@ impl Host {
         if let Some(busy) = self.store.team_busy_in_run(&team.id, &parent.root_id)?.first() {
             bail!("team {:?} is busy in this run (thread {busy}); give it more work with send_message, or pick another team", team.name);
         }
+        let runs_as = crate::freedom::for_cli(&team.cli, &parent.permission_mode);
+        if runs_as != parent.permission_mode && crate::freedom::level(&parent.permission_mode) == "plan" {
+            bail!("team {:?} can only run in Full mode, and this thread is in Plan mode; pick another team", team.name);
+        }
         let short = new_id()[..8].to_string();
         let branch = format!("curia/{short}-{}", slug(&team.name));
         let path = self.data_dir.join("worktrees").join(&parent.root_id[..8]).join(&short);
@@ -51,8 +55,9 @@ impl Host {
             cli: team.cli.clone(),
             config_dir: team.config_dir.clone(),
             cwd: path.to_string_lossy().into_owned(),
-            model: team.model.clone().or(parent.model.clone()),
-            effort: team.effort.clone().or(parent.effort.clone()),
+            // Model names and effort levels belong to a CLI: inherit them only within one.
+            model: team.model.clone().or(parent.model.clone().filter(|_| team.cli == parent.cli)),
+            effort: team.effort.clone().or(parent.effort.clone().filter(|_| team.cli == parent.cli)),
             permission_mode: parent.permission_mode.clone(),
             team_id: Some(team.id.clone()),
             parent_id: Some(parent.id.clone()),
@@ -70,6 +75,10 @@ impl Host {
             }
         };
         self.store.result_expect(&child.id, &parent.id)?;
+        if runs_as != parent.permission_mode {
+            self.record(&child.id, &[Event::Notice { text: format!(
+                "This thread runs in Full mode: {} can't ask for approval. Its own checkout ({branch}) is the only fence.", team.cli) }])?;
+        }
         self.record(&parent.id, &[Event::HandedOff {
             thread_id: child.id.clone(), team: team.name.clone(), title: title.to_string(), branch: Some(branch.clone()),
         }])?;

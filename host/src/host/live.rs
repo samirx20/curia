@@ -1,7 +1,8 @@
 //! A thread whose CLI is running: its session, and the task that stores its events.
 use super::ops::snapshot;
 use super::{Host, HostEvent, lock};
-use crate::claude::{CONTROL_ROOM, ClaudeSession, Launch};
+use crate::claude::CONTROL_ROOM;
+use crate::cli::{self, ControlRoom, Session};
 use crate::record::Recorder;
 use crate::store::ThreadRow;
 use anyhow::{Context, Result};
@@ -12,7 +13,7 @@ use std::sync::{Arc, Mutex};
 use tokio::sync::mpsc;
 
 pub struct Live {
-    pub session: Arc<ClaudeSession>,
+    pub session: Session,
     /// The checkpoint taken just before a message that starts a turn; the turn claims it.
     pending_before: Mutex<Option<String>>,
     /// Who sent the message that starts the next turn (a thread id, or `curia`); the turn claims it.
@@ -34,7 +35,7 @@ impl Live {
     /// Whether a message can be slipped into the running turn now: the CLI must take
     /// mid-turn messages into the turn, and no tool may be running (it would be cut off).
     pub fn can_steer(&self) -> bool {
-        crate::claude::STEERS_MID_TURN && self.open_tools.load(Ordering::SeqCst) == 0
+        self.session.steers_mid_turn() && self.open_tools.load(Ordering::SeqCst) == 0
     }
 }
 
@@ -44,25 +45,17 @@ impl Host {
         if let Some(live) = self.live_of(&row.id) {
             return Ok(live);
         }
-        let (mcp_config, token) = match self.mcp_url.get() {
+        let control = match self.mcp_url.get() {
             Some(url) => {
-                let (path, token) = self.write_mcp_config(&row.id, url)?;
-                (Some(path), Some(token))
+                let (config_file, token) = self.write_mcp_config(&row.id, url)?;
+                Some(ControlRoom { url: url.clone(), token, config_file, home: self.thread_home(&row.id) })
             }
-            None => (None, None),
+            None => None,
         };
-        let launch = Launch {
-            config_dir: row.config_dir.clone().into(),
-            cwd: row.cwd.clone().into(),
-            model: row.model.clone(),
-            effort: row.effort.clone(),
-            permission_mode: crate::freedom::claude_mode(&row.permission_mode).to_string(),
-            resume: row.native_session_id.clone(),
-            append_system_prompt: mcp_config.as_ref().map(|_| super::control::instructions(row).to_string()),
-            mcp_config,
-        };
+        let token = control.as_ref().map(|c| c.token.clone());
+        let instructions = control.as_ref().map(|_| super::control::instructions(row));
         let recorder = Recorder::create(&self.transcript_path(&row.id)?)?;
-        let started = ClaudeSession::start(&self.claude_exe()?, &launch, row.items_used, Some(recorder)).await;
+        let started = cli::start(row, control.as_ref(), instructions, recorder).await;
         let (session, rx) = match started {
             Ok(s) => s,
             Err(e) => {
@@ -97,6 +90,14 @@ impl Host {
             lock(&self.tokens).remove(t);
         }
         let _ = std::fs::remove_file(self.data_dir.join("mcp").join(format!("{thread_id}.json")));
+        if let Err(e) = crate::links::remove_tree(&self.thread_home(thread_id)) {
+            eprintln!("curia-host: could not remove thread {thread_id}'s folder: {e:#}");
+        }
+    }
+
+    /// A folder of the thread's own for launch files (agy's overlay); gone when the CLI stops.
+    fn thread_home(&self, thread_id: &str) -> PathBuf {
+        self.data_dir.join("homes").join(thread_id)
     }
 
     fn transcript_path(&self, thread_id: &str) -> Result<PathBuf> {

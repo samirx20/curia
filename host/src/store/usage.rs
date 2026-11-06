@@ -47,8 +47,9 @@ impl Store {
         for (window, utilization, resets) in rows {
             if window == "five_hour" {
                 (c.five_hour_left, c.five_hour_resets_at) = (left(utilization), resets);
-            } else if window.starts_with("seven_day") {
-                // The tightest weekly window is the one that stops work first.
+            } else {
+                // Every longer window (Claude's weekly ones, Codex's 30-day one) counts as a
+                // long window; the tightest stops work first.
                 let l = left(utilization);
                 if c.weekly_left.is_none() || l < c.weekly_left {
                     (c.weekly_left, c.weekly_resets_at) = (l, resets);

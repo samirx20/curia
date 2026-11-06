@@ -87,7 +87,7 @@ impl Store {
             "INSERT INTO threads (id, title, cli, config_dir, cwd, model, effort, permission_mode, created_at, updated_at,
                                   team_id, parent_id, root_id, depth, branch, client_request_id)
              VALUES (?1, ?2, ?3, ?4, ?5, ?6, ?7, ?8, ?9, ?9, ?10, ?11, ?12, ?13, ?14, ?15)",
-            params![id, t.title, t.cli, t.config_dir, t.cwd, t.model, t.effort, t.permission_mode, now,
+            params![id, t.title, t.cli, t.config_dir, t.cwd, t.model, t.effort, crate::freedom::for_cli(&t.cli, &t.permission_mode), now,
                 t.team_id, t.parent_id, root, t.depth, t.branch, t.client_request_id],
         )?;
         self.thread_get(&id)

@@ -15,8 +15,14 @@ use std::time::Instant;
 #[derive(Debug, Serialize, Deserialize)]
 #[serde(tag = "dir", rename_all = "snake_case")]
 pub enum Entry {
-    /// How many item ids the thread had used before this process (older recordings: 0).
-    Start { ms: u64, items_so_far: u64 },
+    /// How many item ids the thread had used before this process (older recordings: 0), and
+    /// which CLI it was (older recordings: Claude).
+    Start {
+        ms: u64,
+        items_so_far: u64,
+        #[serde(default, skip_serializing_if = "Option::is_none")]
+        cli: Option<String>,
+    },
     In { ms: u64, line: String },
     Out { ms: u64, line: String },
     Err { ms: u64, line: String },
@@ -61,8 +67,20 @@ pub fn read(path: &Path) -> Result<Vec<Entry>> {
     Ok(entries)
 }
 
-/// Runs a recording's CLI lines through a fresh mapper and returns the events it produces.
-pub fn replay_claude(entries: &[Entry]) -> Result<Vec<Event>> {
+/// Runs a recording's CLI lines through the right adapter's mapper and returns the events.
+pub fn replay(entries: &[Entry]) -> Result<Vec<Event>> {
+    let cli = entries.iter().find_map(|e| match e {
+        Entry::Start { cli, .. } => cli.clone(),
+        _ => None,
+    });
+    match cli.as_deref() {
+        Some("codex") => crate::codex::replay::replay(entries),
+        Some("agy") => crate::agy::mapper::replay(entries),
+        _ => replay_claude(entries),
+    }
+}
+
+fn replay_claude(entries: &[Entry]) -> Result<Vec<Event>> {
     let mut m = Mapper::new();
     let mut events = Vec::new();
     for e in entries {
@@ -117,7 +135,7 @@ mod tests {
                 let entries = super::read(&f).unwrap();
                 let recorded = super::recorded_events(&entries);
                 assert!(!recorded.is_empty(), "{} has no recorded events", f.display());
-                assert_eq!(super::replay_claude(&entries).unwrap(), recorded, "{}", f.display());
+                assert_eq!(super::replay(&entries).unwrap(), recorded, "{}", f.display());
                 checked += 1;
             }
         }

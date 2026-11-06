@@ -3,12 +3,16 @@
 //!   curia-host dev --data <dir> (--thread <id> | --last | --config-dir <dir> --cwd <dir> [--model M] [--effort E] [--mode M])
 //!   curia-host replay <recording.jsonl>
 //!   curia-host scrub <live recording> <fixture>
+mod agy;
 mod claude;
+mod cli;
+mod codex;
 mod dev;
 mod freedom;
 mod git;
 mod host;
 mod link;
+mod links;
 mod mcp;
 mod process;
 mod quota;
@@ -120,7 +124,7 @@ async fn serve(args: &[String]) -> Result<()> {
 /// Replays a recording and checks it produces the events recorded live.
 fn replay(path: &str) -> Result<()> {
     let entries = record::read(path.as_ref())?;
-    let replayed = record::replay_claude(&entries)?;
+    let replayed = record::replay(&entries)?;
     let recorded = record::recorded_events(&entries);
     for e in &replayed {
         println!("{}", serde_json::to_string(e)?);

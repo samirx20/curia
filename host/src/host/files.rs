@@ -79,6 +79,9 @@ impl Host {
         if row.status == "running" {
             bail!("the thread is mid-turn; change it once the turn ends");
         }
+        if let Some(f) = freedom.filter(|f| crate::freedom::for_cli(&row.cli, f) != *f && crate::freedom::level(f) != "full") {
+            bail!("{} threads always run in Full mode (the CLI can't ask for approval); {f:?} isn't possible", row.cli);
+        }
         if let (Some(f), Some(parent)) = (freedom, &row.parent_id) {
             let parent = self.store.thread_get(parent)?;
             if crate::freedom::rank(f) > crate::freedom::rank(&parent.permission_mode) {

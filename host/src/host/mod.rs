@@ -14,7 +14,6 @@ mod tests;
 #[cfg(test)]
 mod tests_quota;
 
-use crate::claude::find_claude;
 use crate::store::{Recovered, Store};
 use anyhow::{Context, Result, bail};
 use curia_core::{Decision, Event};
@@ -37,8 +36,6 @@ pub struct HostEvent {
 pub struct Host {
     pub store: Store,
     data_dir: PathBuf,
-    /// Found the first time a Claude thread starts, so a host without Claude still opens.
-    claude_exe: OnceLock<PathBuf>,
     live: Mutex<HashMap<String, Arc<Live>>>,
     events: broadcast::Sender<HostEvent>,
     /// The control room's MCP address, once it is serving.
@@ -65,10 +62,11 @@ impl Host {
         }
         let store = Store::open(&data_dir.join("curia.sqlite"))?;
         let recovered = store.recover()?;
+        // No CLI runs yet, so every thread folder (agy's overlays) is left from a host that stopped.
+        crate::links::remove_tree(&data_dir.join("homes")).context("could not clear the threads' old folders")?;
         let host = Host {
             store,
             data_dir: data_dir.to_path_buf(),
-            claude_exe: OnceLock::new(),
             live: Mutex::new(HashMap::new()),
             events: broadcast::channel(4096).0,
             mcp_url: OnceLock::new(),
@@ -107,14 +105,6 @@ impl Host {
             let _ = self.events.send(HostEvent { thread_id: thread_id.to_string(), seq: Some(s.seq), event: s.event });
         }
         Ok(())
-    }
-
-    fn claude_exe(&self) -> Result<PathBuf> {
-        if let Some(p) = self.claude_exe.get() {
-            return Ok(p.clone());
-        }
-        let p = find_claude()?;
-        Ok(self.claude_exe.get_or_init(|| p).clone())
     }
 
     /// Stores and broadcasts events as if a CLI had produced them (tests of everything

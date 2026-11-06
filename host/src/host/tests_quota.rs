@@ -70,7 +70,7 @@ async fn a_thread_moves_only_to_a_team_that_can_resume_its_session() {
     h.store.team_create("other", "claude", &other.to_string_lossy(), None, None).unwrap();
     let t = on_team(&h, &a.id, "ca");
     h.inject(&t.id, &[Event::SessionStarted { native_session_id: "s-1".into(), model: None }]).unwrap();
-    assert!(super::quota::session_exists_for_test(&shared, "s-1"));
+    assert!(crate::cli::session_visible("claude", &shared, "s-1"));
     let err = h.move_thread(&t.id, "other").await.unwrap_err();
     assert!(format!("{err:#}").contains("can't see"), "{err:#}");
     h.move_thread(&t.id, "shared").await.unwrap();

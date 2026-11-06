@@ -22,7 +22,7 @@ impl Host {
     }
 
     /// Asks a freshly started CLI for its usage, so a team's figures are current before it works.
-    pub(super) async fn refresh_usage(&self, thread_id: &str, session: &crate::claude::ClaudeSession) {
+    pub(super) async fn refresh_usage(&self, thread_id: &str, session: &crate::cli::Session) {
         match session.usage().await {
             Ok(windows) if !windows.is_empty() => {
                 if let Err(e) = self.usage_seen(thread_id, &windows, false) {
@@ -97,8 +97,8 @@ impl Host {
             bail!("moving a thread to another CLI needs a hand-off summary, which isn't built yet");
         }
         if let Some(session) = &row.native_session_id {
-            if !claude_session_exists(Path::new(&to.config_dir), session) {
-                bail!("team {:?} can't see this thread's Claude session (its account doesn't share history), so the thread can't continue there", to.name);
+            if !crate::cli::session_visible(&row.cli, Path::new(&to.config_dir), session) {
+                bail!("team {:?} can't see this thread's session (its account doesn't share history), so the thread can't continue there", to.name);
             }
         }
         if let Some(live) = self.live_of(thread_id) {
@@ -161,13 +161,3 @@ impl Host {
     }
 }
 
-/// Whether a Claude config folder holds this session (`projects/<folder>/<session>.jsonl`).
-fn claude_session_exists(config_dir: &Path, session: &str) -> bool {
-    let Ok(projects) = std::fs::read_dir(config_dir.join("projects")) else { return false };
-    projects.flatten().any(|p| p.path().join(format!("{session}.jsonl")).is_file())
-}
-
-#[cfg(test)]
-pub(super) fn session_exists_for_test(config_dir: &Path, session: &str) -> bool {
-    claude_session_exists(config_dir, session)
-}

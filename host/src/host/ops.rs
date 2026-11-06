@@ -9,8 +9,8 @@ use std::sync::Arc;
 
 impl Host {
     pub fn create_thread(&self, t: &NewThread) -> Result<ThreadRow> {
-        if t.cli != "claude" {
-            bail!("only Claude Code threads exist so far");
+        if !crate::cli::KNOWN.contains(&t.cli.as_str()) {
+            bail!("Curia can't drive {:?} yet (it knows {})", t.cli, crate::cli::KNOWN.join(", "));
         }
         self.store.thread_create(t)
     }

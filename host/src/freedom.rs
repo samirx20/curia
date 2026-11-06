@@ -22,6 +22,12 @@ pub fn rank(name: &str) -> usize {
     LEVELS.iter().position(|x| *x == l).unwrap_or(1)
 }
 
+/// The level a thread on `cli` really runs at. Headless agy can't ask and refuses commands
+/// in every mode but Full, so Antigravity threads always run Full (Scope §8).
+pub fn for_cli<'a>(cli: &str, name: &'a str) -> &'a str {
+    if cli == "agy" { "full" } else { name }
+}
+
 /// Claude Code's `--permission-mode` for a level. "Sandbox free" would let commands inside the
 /// sandbox run too; Claude's nearest mode, `acceptEdits`, still asks for commands, which is the
 /// more cautious side.
