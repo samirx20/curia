@@ -17,3 +17,8 @@ dist/
 
 # Written by the desktop build for the QML language server; holds local paths.
 .qmlls.ini
+
+# The providers' own marks (Claude Code, Codex, Antigravity) for the team badges: other
+# companies' logos, kept local until it's decided they may be published. The app falls
+# back to its own line marks without them.
+/desktop/providers/

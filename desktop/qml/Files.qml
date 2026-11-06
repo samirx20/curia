@@ -22,8 +22,21 @@ Item {
             Text { text: "Changed files"; color: theme.text3; font.pixelSize: theme.small; Layout.fillWidth: true }
             Text { text: files.listing.files.length; color: theme.text3; font.pixelSize: theme.small }
         }
-        Text { visible: !files.listing.git; text: "This folder isn't a git repository."; color: theme.text3 }
-        Text { visible: files.listing.git && files.listing.files.length === 0; text: "No changes."; color: theme.text3 }
+        ColumnLayout {
+            visible: !files.listing.git || files.listing.files.length === 0
+            Layout.fillWidth: true
+            Layout.topMargin: 40
+            spacing: 8
+            Icon { Layout.alignment: Qt.AlignHCenter; name: "folder"; size: 28; stroke: 1.5; color: theme.text3 }
+            Text { Layout.fillWidth: true; horizontalAlignment: Text.AlignHCenter; text: files.listing.git ? "No changes" : "Not a git repository"; color: theme.text2 }
+            Text {
+                Layout.fillWidth: true; Layout.leftMargin: 16; Layout.rightMargin: 16
+                horizontalAlignment: Text.AlignHCenter
+                wrapMode: Text.Wrap
+                text: files.listing.git ? "Files the thread changes since the last commit show here." : "Changes can only be listed in a git repository."
+                color: theme.text3; font.pixelSize: theme.small
+            }
+        }
         ListView {
             Layout.fillWidth: true
             Layout.fillHeight: true
@@ -32,12 +45,18 @@ Item {
             delegate: Rectangle {
                 required property var modelData
                 width: ListView.view.width
-                height: 26
-                radius: 6
+                height: 28
+                radius: theme.radiusSmall
                 color: area.containsMouse ? theme.raised : "transparent"
-                Text {
+                Icon {
+                    id: fileIcon
                     x: 6; anchors.verticalCenter: parent.verticalCenter
-                    width: parent.width - 90; elide: Text.ElideLeft
+                    size: 14; color: theme.text3
+                    name: /\.(png|jpe?g|gif|webp|svg)$/i.test(modelData.path) ? "image" : /\.(mp4|mov|webm)$/i.test(modelData.path) ? "video" : "file"
+                }
+                Text {
+                    anchors.left: fileIcon.right; anchors.leftMargin: 8; anchors.verticalCenter: parent.verticalCenter
+                    width: parent.width - 110; elide: Text.ElideLeft
                     text: modelData.path; color: theme.text; font.family: files.mono; font.pixelSize: theme.small
                 }
                 Text {
@@ -53,23 +72,35 @@ Item {
     ColumnLayout {
         anchors.fill: parent
         spacing: 8
+        id: viewer
         visible: files.opened !== null
         readonly property bool markdown: files.opened !== null && /\.(md|markdown)$/i.test(files.opened.path)
         RowLayout {
             Layout.fillWidth: true
-            Text { text: "‹ Files"; color: theme.text2; MouseArea { anchors.fill: parent; onClicked: files.back() } }
-            Text { text: files.opened ? files.opened.path : ""; color: theme.text; elide: Text.ElideLeft; Layout.fillWidth: true; horizontalAlignment: Text.AlignRight }
+            Btn { kind: "quiet"; icon: "back"; text: "Files"; onClicked: files.back() }
+            Text { text: files.opened ? files.opened.path : ""; color: theme.text; elide: Text.ElideLeft; Layout.fillWidth: true; horizontalAlignment: Text.AlignRight; font.family: files.mono; font.pixelSize: theme.small }
         }
-        Row {
-            spacing: 6
-            Repeater {
-                model: parent.parent.markdown ? ["preview", "source"] : ["changes", "file"]
-                delegate: Rectangle {
-                    required property string modelData
-                    width: label.implicitWidth + 18; height: 24; radius: 12
-                    color: files.view === modelData ? theme.selection : theme.field
-                    Text { id: label; anchors.centerIn: parent; text: modelData.charAt(0).toUpperCase() + modelData.slice(1); color: theme.text; font.pixelSize: theme.small }
-                    MouseArea { anchors.fill: parent; onClicked: files.view = modelData }
+        // Which way to see it: a small segmented switch.
+        Rectangle {
+            implicitWidth: seg.implicitWidth + 4
+            implicitHeight: 28
+            radius: 7
+            color: theme.field
+            Row {
+                id: seg
+                anchors.centerIn: parent
+                spacing: 2
+                Repeater {
+                    model: viewer.markdown ? ["preview", "source"] : ["changes", "file"]
+                    delegate: Btn {
+                        required property string modelData
+                        kind: "quiet"
+                        small: true
+                        chosen: files.view === modelData
+                        width: implicitWidth + 12
+                        text: modelData.charAt(0).toUpperCase() + modelData.slice(1)
+                        onClicked: files.view = modelData
+                    }
                 }
             }
         }

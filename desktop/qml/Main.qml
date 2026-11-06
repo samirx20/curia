@@ -21,6 +21,15 @@ ApplicationWindow {
     property string currentId: ""
     readonly property var current: threads.find(t => t.id === currentId) || null
     property bool railOpen: true
+    property bool sideOpen: true
+    readonly property var currentTeam: current ? teams.find(t => t.id === current.team_id) || null : null
+    // Opens the rail on a view; the open view's button hides it again.
+    function showRail(view) {
+        if (railOpen && rail.tab === view) { railOpen = false; return }
+        rail.tab = view
+        railOpen = true
+        if (view === "files") listFiles()
+    }
     property string message: ""
     property var settings: ({})
     property var listing: ({ git: true, files: [] })
@@ -34,8 +43,8 @@ ApplicationWindow {
     Driver { id: driver; win: win }
 
     Theme { id: theme }
-    FontLoader { id: inter; source: host.fontsUrl() + "InterVariable.ttf" }
-    FontLoader { id: mono; source: host.fontsUrl() + "JetBrainsMono.ttf" }
+    FontLoader { id: inter; source: host.assetUrl("fonts") + "InterVariable.ttf" }
+    FontLoader { id: mono; source: host.assetUrl("fonts") + "JetBrainsMono.ttf" }
 
     HostLink {
         id: host
@@ -115,23 +124,67 @@ ApplicationWindow {
     id: page
     anchors.fill: parent
     color: theme.app
+    ColumnLayout {
+    anchors.fill: parent
+    anchors.margins: theme.gap
+    spacing: theme.gap
+
+    // The header (docs: Design 01): sidebar, the open thread, and the rail's views.
     RowLayout {
-        anchors.fill: parent
-        anchors.margins: theme.gap
+        Layout.fillWidth: true
+        Layout.preferredHeight: 34
+        spacing: 8
+        Btn { kind: "icon"; icon: "sidebar"; chosen: win.sideOpen; onClicked: win.sideOpen = !win.sideOpen }
+        TeamBadge { visible: win.current !== null; team: win.currentTeam; Layout.leftMargin: 6 }
+        Text {
+            Layout.leftMargin: 4
+            text: win.current ? win.current.title : "Curia"
+            color: theme.text
+            font.weight: Font.DemiBold
+            elide: Text.ElideRight
+            Layout.maximumWidth: 520
+        }
+        Text {
+            visible: win.current !== null && win.currentTeam !== null
+            text: theme.who(win.currentTeam)
+            color: theme.text3
+            font.pixelSize: theme.small
+        }
+        Item { Layout.fillWidth: true }
+        Rectangle {
+            implicitWidth: views.implicitWidth + 6
+            implicitHeight: 32
+            radius: 8
+            color: theme.panel
+            Row {
+                id: views
+                anchors.centerIn: parent
+                spacing: 2
+                Btn { kind: "icon"; icon: "session"; chosen: win.railOpen && rail.tab === "session"; onClicked: win.showRail("session") }
+                Btn { kind: "icon"; icon: "folder"; chosen: win.railOpen && rail.tab === "files"; onClicked: win.showRail("files") }
+            }
+        }
+    }
+
+    RowLayout {
+        Layout.fillWidth: true
+        Layout.fillHeight: true
         spacing: theme.gap
 
         Sidebar {
+            visible: win.sideOpen
             Layout.preferredWidth: 260
             Layout.fillHeight: true
             threads: win.threads
+            teams: win.teams
+            inbox: win.inbox
             currentId: win.currentId
-            inboxCount: win.inbox.length
             connected: host.connected
             status: host.status
             onPicked: id => win.open(id)
             onOpenInbox: win.panel = "inbox"
             onOpenUsage: win.panel = "usage"
-            onNewRun: win.panel = "newrun"
+            onNewRun: folder => { newRun.folder = folder; win.panel = "newrun" }
         }
         Conversation {
             id: conversation
@@ -146,7 +199,6 @@ ApplicationWindow {
             onUndo: mergeId => win.send("refresh-after", "merge_undo", { merge_id: mergeId })
             onOpenThread: id => win.open(id)
             onStop: win.send("refresh-after", "thread_interrupt", { thread_id: win.currentId })
-            onToggleRail: win.railOpen = !win.railOpen
             onOpenPicker: win.panel = "picker"
         }
         Rail {
@@ -167,6 +219,7 @@ ApplicationWindow {
             subagents: conversation.subagents
         }
     }
+    }
 
     // Panels over the page; a click outside closes them.
     Rectangle {
@@ -182,6 +235,8 @@ ApplicationWindow {
         width: 420
         items: win.inbox
         threads: win.threads
+        teams: win.teams
+        mono: mono.name
         onAnswer: (threadId, requestId, decision) => win.send("refresh-after", "thread_answer", { thread_id: threadId, request_id: requestId, decision: decision })
         onOpenThread: id => { win.panel = ""; win.open(id) }
         onClose: win.panel = ""
@@ -210,6 +265,8 @@ ApplicationWindow {
         onClose: win.panel = ""
     }
     NewRun {
+        id: newRun
+        monoFamily: mono.name
         visible: win.panel === "newrun"
         anchors.centerIn: parent
         teams: win.teams
@@ -223,12 +280,13 @@ ApplicationWindow {
         anchors.bottom: parent.bottom
         anchors.horizontalCenter: parent.horizontalCenter
         anchors.bottomMargin: 24
-        width: Math.min(toastText.implicitWidth + 32, parent.width - 80)
-        height: toastText.implicitHeight + 16
+        width: Math.min(toastText.implicitWidth + 60, parent.width - 80)
+        height: toastText.implicitHeight + 20
         radius: theme.radius
         color: theme.raised
         border.color: theme.red
-        Text { id: toastText; anchors.centerIn: parent; width: parent.width - 32; text: win.message; color: theme.text; wrapMode: Text.Wrap; font: win.font }
+        Icon { id: toastIcon; x: 14; anchors.verticalCenter: parent.verticalCenter; name: "warning"; size: 15; color: theme.red }
+        Text { id: toastText; anchors.left: toastIcon.right; anchors.leftMargin: 10; anchors.verticalCenter: parent.verticalCenter; width: Math.min(implicitWidth, win.width - 160); text: win.message; color: theme.text; wrapMode: Text.Wrap }
         MouseArea { anchors.fill: parent; onClicked: win.message = "" }
     }
 

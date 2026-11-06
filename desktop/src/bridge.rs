@@ -32,10 +32,10 @@ pub mod qobject {
         #[qinvokable]
         fn arg(self: &HostLink, name: &QString) -> QString;
 
-        /// The folder holding the app's fonts, as a `file:` URL ending in `/`.
+        /// One of the app's asset folders (`fonts`, `providers`), as a `file:` URL ending in `/`.
         #[qinvokable]
-        #[cxx_name = "fontsUrl"]
-        fn fonts_url(self: &HostLink) -> QString;
+        #[cxx_name = "assetUrl"]
+        fn asset_url(self: &HostLink, folder: &QString) -> QString;
 
         #[qsignal]
         fn reply(self: Pin<&mut HostLink>, tag: QString, json: QString);
@@ -155,10 +155,11 @@ impl qobject::HostLink {
         });
     }
 
-    fn fonts_url(&self) -> QString {
+    fn asset_url(&self, folder: &QString) -> QString {
         // Beside the program when installed; the source folder while developing.
-        let beside = std::env::current_exe().ok().and_then(|e| e.parent().map(|d| d.join("fonts")));
-        let dir = beside.filter(|d| d.is_dir()).unwrap_or_else(|| std::path::Path::new(env!("CARGO_MANIFEST_DIR")).join("fonts"));
+        let folder = folder.to_string();
+        let beside = std::env::current_exe().ok().and_then(|e| e.parent().map(|d| d.join(&folder)));
+        let dir = beside.filter(|d| d.is_dir()).unwrap_or_else(|| std::path::Path::new(env!("CARGO_MANIFEST_DIR")).join(&folder));
         QString::from(&format!("file:///{}/", dir.to_string_lossy().replace('\\', "/")))
     }
 

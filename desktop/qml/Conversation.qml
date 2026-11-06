@@ -16,7 +16,6 @@ Rectangle {
     signal undo(string mergeId)
     signal openThread(string id)
     signal stop()
-    signal toggleRail()
     signal openPicker()
 
     color: theme.panel
@@ -40,6 +39,18 @@ Rectangle {
         rows.append({ kind: kind, key: key || "", text: text || "", extra: JSON.stringify(extra || {}), phase: state || "" })
         if (key) where[key] = rows.count - 1
     }
+    // "Main thread · 2 teams · C:\work\repo": what this thread is, and where it works.
+    function describe() {
+        const t = thread
+        if (!t) return ""
+        const run = threads.filter(x => x.root_id === t.root_id && x.id !== t.root_id)
+        const teamsUsed = new Set(run.map(x => x.team_id)).size
+        const parts = [t.parent_id ? "Team thread" : "Main thread"]
+        if (!t.parent_id && teamsUsed > 0) parts.push(teamsUsed + (teamsUsed === 1 ? " team" : " teams"))
+        parts.push(theme.freedomLabel(t.freedom))
+        parts.push(t.branch || t.cwd)
+        return parts.join("  ·  ")
+    }
     function titleOf(id) { const t = threads.find(x => x.id === id); return t ? "\"" + t.title + "\"" : "another thread" }
     function at(key) { return where[key] === undefined ? -1 : where[key] }
     function setExtra(i, f) { const x = JSON.parse(rows.get(i).extra); f(x); rows.setProperty(i, "extra", JSON.stringify(x)) }
@@ -48,9 +59,9 @@ Rectangle {
         const e = w.event
         switch (e.type) {
         case "turn_started":
-            if (e.by === "curia") row("notice", "", "▸  Curia: " + (e.prompt || ""))
-            else if (e.by) row("notice", "", "▸  Started by " + titleOf(e.by))
-            else if (e.prompt === null) row("notice", "", "▸  The agent carried on by itself")
+            if (e.by === "curia") row("notice", "", "Curia: " + (e.prompt || ""))
+            else if (e.by) row("notice", "", "Started by " + titleOf(e.by))
+            else if (e.prompt === null) row("notice", "", "The agent carried on by itself")
             else row("user", "", e.prompt)
             break
         case "text_started": row(e.kind === "thinking" ? "thinking" : "text", e.item, e.text); break
@@ -98,29 +109,37 @@ Rectangle {
         anchors.fill: parent
         spacing: 0
 
-        // The bar: status, where, and the thread's actions.
+        // The bar: status, what this thread is, and its actions (docs: Design 01).
         RowLayout {
             Layout.fillWidth: true
-            Layout.margins: 12
-            spacing: 10
+            Layout.preferredHeight: 46
+            Layout.leftMargin: 16
+            Layout.rightMargin: 12
+            spacing: 8
+            StatusMark {
+                visible: conv.thread !== null
+                size: 14
+                tint: theme.text
+                state_: conv.thread && conv.thread.status === "running" ? "running" : "done"
+            }
             Text {
-                text: !conv.thread ? "" : (conv.thread.status === "running" ? "◌  Working" : "✓  Idle")
-                color: conv.thread && conv.thread.status === "running" ? theme.blue : theme.text2
+                visible: conv.thread !== null
+                text: conv.thread && conv.thread.status === "running" ? "Working" : "Idle"
+                color: theme.text
                 font.weight: Font.DemiBold
             }
             Text {
                 Layout.fillWidth: true
                 elide: Text.ElideMiddle
                 color: theme.text3
-                text: !conv.thread ? "Pick a thread on the left." :
-                      (conv.thread.parent_id ? "Team thread" : "Main thread") + " · " + conv.thread.freedom + " · " + conv.thread.cwd
+                text: !conv.thread ? "Pick a thread on the left, or start a new run." : conv.describe()
             }
-            Button {
+            Btn {
                 visible: conv.thread !== null && conv.thread.status === "running"
-                text: "■  Stop"
+                icon: "stop"
+                text: "Stop"
                 onClicked: conv.stop()
             }
-            Button { text: "Panel"; flat: true; onClicked: conv.toggleRail() }
         }
         Rectangle { Layout.fillWidth: true; height: 1; color: theme.line }
 
@@ -130,9 +149,9 @@ Rectangle {
             Layout.fillHeight: true
             clip: true
             model: rows
-            spacing: 10
-            topMargin: 16
-            bottomMargin: 16
+            spacing: 0
+            topMargin: 20
+            bottomMargin: 20
             ScrollBar.vertical: ScrollBar {}
             // The list places each row itself, so the centred column sits inside a full-width row.
             delegate: Item {
@@ -143,13 +162,18 @@ Rectangle {
                 required property string extra
                 required property string phase
                 width: list.width
-                height: ev.height
+                // Each row brings its own gap, so an empty row takes no room at all.
+                height: ev.height > 0 ? ev.height + 14 : 0
+                // Rows scrolled out of view aren't drawn.
+                visible: height > 0 && y + height >= list.contentY && y <= list.contentY + list.height
                 EventRow {
                     id: ev
                     width: Math.min(slot.width - 48, 680)
                     anchors.horizontalCenter: parent.horizontalCenter
                     kind: slot.kind; key: slot.key; text: slot.text; extra: slot.extra; phase: slot.phase
                     mono: conv.mono
+                    teams: conv.teams
+                    threads: conv.threads
                     onAnswer: (id, d) => conv.answer(id, d)
                     onUndo: id => conv.undo(id)
                     onOpenThread: id => conv.openThread(id)

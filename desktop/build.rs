@@ -15,6 +15,10 @@ fn main() {
         "qml/Picker.qml",
         "qml/NewRun.qml",
         "qml/Driver.qml",
+        "qml/Icon.qml",
+        "qml/StatusMark.qml",
+        "qml/TeamBadge.qml",
+        "qml/Btn.qml",
     ]))
     .qt_module("Gui")
     .qt_module("Qml")
