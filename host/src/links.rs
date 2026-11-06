@@ -1,43 +1,44 @@
 //! Folder links (junctions on Windows, symlinks elsewhere), and removing a folder without
 //! ever following one: removing through a link once deleted the files it pointed to in
 //! Agent Hub's main checkout.
-use anyhow::{Context, Result, bail};
+use anyhow::{Context, Result};
 use std::path::Path;
 
 /// Links the folder `link` to `target`. Junctions need no special rights on Windows.
+#[cfg(windows)]
 pub fn link_dir(target: &Path, link: &Path) -> Result<()> {
-    #[cfg(windows)]
-    {
-        let out = std::process::Command::new("cmd")
-            .args(["/C", "mklink", "/J"])
-            .arg(link)
-            .arg(target)
-            .output()
-            .context("could not run mklink")?;
-        if !out.status.success() {
-            bail!("could not link {} to {}: {}", link.display(), target.display(), String::from_utf8_lossy(&out.stderr).trim());
-        }
-        Ok(())
+    let out = std::process::Command::new("cmd")
+        .args(["/C", "mklink", "/J"])
+        .arg(link)
+        .arg(target)
+        .output()
+        .context("could not run mklink")?;
+    if !out.status.success() {
+        anyhow::bail!("could not link {} to {}: {}", link.display(), target.display(), String::from_utf8_lossy(&out.stderr).trim());
     }
-    #[cfg(not(windows))]
-    {
-        std::os::unix::fs::symlink(target, link).with_context(|| format!("could not link {} to {}", link.display(), target.display()))
-    }
+    Ok(())
+}
+
+#[cfg(not(windows))]
+pub fn link_dir(target: &Path, link: &Path) -> Result<()> {
+    std::os::unix::fs::symlink(target, link).with_context(|| format!("could not link {} to {}", link.display(), target.display()))
 }
 
 /// Whether `path` is a link (symlink or junction) rather than a real file or folder.
 pub fn is_link(path: &Path) -> bool {
-    let Ok(meta) = std::fs::symlink_metadata(path) else { return false };
-    if meta.file_type().is_symlink() {
-        return true;
-    }
-    #[cfg(windows)]
-    {
-        use std::os::windows::fs::MetadataExt;
-        const FILE_ATTRIBUTE_REPARSE_POINT: u32 = 0x400;
-        meta.file_attributes() & FILE_ATTRIBUTE_REPARSE_POINT != 0
-    }
-    #[cfg(not(windows))]
+    std::fs::symlink_metadata(path).is_ok_and(|meta| meta.file_type().is_symlink() || reparse_point(&meta))
+}
+
+/// A junction is a reparse point that isn't reported as a symlink.
+#[cfg(windows)]
+fn reparse_point(meta: &std::fs::Metadata) -> bool {
+    use std::os::windows::fs::MetadataExt;
+    const FILE_ATTRIBUTE_REPARSE_POINT: u32 = 0x400;
+    meta.file_attributes() & FILE_ATTRIBUTE_REPARSE_POINT != 0
+}
+
+#[cfg(not(windows))]
+fn reparse_point(_: &std::fs::Metadata) -> bool {
     false
 }
 
