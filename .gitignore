@@ -1,0 +1,10 @@
+# Private: design docs and agent notes stay on Sam's machine only.
+/docs/
+/AGENTS.md
+/CLAUDE.md
+/HANDOFF.md
+
+# Build output
+target/
+node_modules/
+dist/
