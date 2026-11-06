@@ -5,11 +5,15 @@
 //!   curia-host scrub <live recording> <fixture>
 mod claude;
 mod dev;
+mod freedom;
 mod git;
 mod host;
 mod link;
 mod mcp;
 mod process;
+mod quota;
+mod redact;
+mod rules;
 mod record;
 mod scrub;
 mod store;
@@ -101,6 +105,8 @@ async fn serve(args: &[String]) -> Result<()> {
         println!("Recovered after a restart: {} turn(s) cut off, {} approval(s) expired.", recovered.turns, recovered.requests);
     }
     let control_room = mcp::start(host.clone()).await?;
+    host.start_ticker();
+    host.continue_after_restart(&recovered).await?;
     println!("Control room (MCP) at {control_room}");
     let shutdown = async {
         let _ = tokio::signal::ctrl_c().await;

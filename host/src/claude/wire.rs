@@ -15,6 +15,11 @@ pub fn interrupt() -> Value {
     json!({"subtype": "interrupt"})
 }
 
+/// The account's usage windows. `skipBehaviors` stops Claude scanning its whole history.
+pub fn get_usage() -> Value {
+    json!({"subtype": "get_usage", "skipBehaviors": true})
+}
+
 pub fn set_effort(level: &str) -> Value {
     json!({"subtype": "apply_flag_settings", "settings": {"effortLevel": level}})
 }

@@ -4,11 +4,12 @@ use crate::store::new_id;
 use anyhow::{Context, Result};
 use curia_core::{Decision, Event, RequestKind, Resolution};
 use serde_json::{Value, json};
+use std::sync::Arc;
 use tokio::sync::oneshot;
 
 impl Host {
     /// Records the question in the caller's thread and waits for the user's answer.
-    pub async fn ask_human(&self, caller: &str, question: &str, options: &[String]) -> Result<Value> {
+    pub async fn ask_human(self: &Arc<Self>, caller: &str, question: &str, options: &[String]) -> Result<Value> {
         let request_id = new_id();
         let (tx, rx) = oneshot::channel();
         lock(&self.asks).insert(request_id.clone(), (caller.to_string(), tx));
@@ -20,6 +21,7 @@ impl Host {
             lock(&self.asks).remove(&request_id);
             return Err(e);
         }
+        self.deny_later(caller, &request_id, self.store.settings()?.deny_unanswered_after_minutes);
         let decision = rx.await.context("the question was dropped before anyone answered (the host is stopping)")?;
         Ok(match decision {
             Decision::Answer { answers } => json!({"answer": answers.get(question).cloned().unwrap_or(Value::Object(answers))}),

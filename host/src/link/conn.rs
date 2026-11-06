@@ -131,14 +131,20 @@ async fn dispatch(host: &Arc<Host>, call: Call) -> Result<Value> {
             })?;
             json!(info(&row))
         }
-        Call::TeamsList => json!(host.store.teams()?.into_iter()
-            .map(|t| TeamInfo { id: t.id, name: t.name, cli: t.cli, model: t.model })
-            .collect::<Vec<_>>()),
+        Call::TeamsList => json!(host.teams_with_quota(None)?),
         Call::TeamCreate { team: t } => {
             let row = host.store.team_create(&t.name, &t.cli, &t.config_dir, t.model.as_deref(), t.effort.as_deref())?;
             json!(TeamInfo { id: row.id, name: row.name, cli: row.cli, model: row.model })
         }
         Call::MergeUndo { merge_id } => host.undo_merge(&merge_id).await.map(|_| Value::Null)?,
+        Call::ThreadMove { thread_id, team } => host.move_thread(&thread_id, &team).await.map(|_| Value::Null)?,
+        Call::SettingsGet => serde_json::to_value(host.store.settings()?)?,
+        Call::SettingsSet { settings } => {
+            let s: crate::store::Settings = serde_json::from_value(settings)?;
+            host.store.settings_set(&s)?;
+            serde_json::to_value(s)?
+        }
+        Call::InboxList => json!(host.store.pending_requests()?),
         Call::ThreadHistory { thread_id, before_seq, limit } => {
             let page = host.store.events_before(&thread_id, before_seq, limit.min(500))?;
             json!(page.into_iter().map(|s| wire(&thread_id, s)).collect::<Vec<_>>())

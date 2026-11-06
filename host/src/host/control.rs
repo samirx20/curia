@@ -21,17 +21,6 @@ pub fn instructions(row: &ThreadRow) -> &'static str {
     if row.parent_id.is_some() { TEAM } else { MAIN }
 }
 
-/// How much freedom a permission mode gives, to keep a child within its parent's.
-fn freedom(mode: &str) -> u8 {
-    match mode {
-        "plan" => 0,
-        "manual" | "default" => 1,
-        "acceptEdits" => 2,
-        "auto" | "dontAsk" => 3,
-        _ => 4, // bypassPermissions and anything unknown rank highest, so they never pass as "less"
-    }
-}
-
 impl Host {
     pub async fn hand_off(self: &Arc<Self>, caller: &str, team: &str, title: &str, task: &str, request_id: Option<&str>) -> Result<Value> {
         let parent = self.store.thread_get(caller)?;
@@ -43,7 +32,7 @@ impl Host {
         if parent.depth + 1 > MAX_DEPTH {
             bail!("hand-offs go at most {MAX_DEPTH} levels deep; do this part yourself");
         }
-        let team = self.store.team(team)?;
+        let team = self.choose_team(team, parent.team_id.as_deref())?;
         if let Some(busy) = self.store.team_busy_in_run(&team.id, &parent.root_id)?.first() {
             bail!("team {:?} is busy in this run (thread {busy}); give it more work with send_message, or pick another team", team.name);
         }
@@ -171,12 +160,7 @@ impl Host {
 
     pub fn list_teams(&self, caller: &str) -> Result<Value> {
         let root = self.store.thread_get(caller)?.root_id;
-        let mut out = Vec::new();
-        for t in self.store.teams()? {
-            let busy = self.store.team_busy_in_run(&t.id, &root)?;
-            out.push(json!({"name": t.name, "cli": t.cli, "model": t.model, "busy_in_this_run": !busy.is_empty(), "quota": "not tracked yet"}));
-        }
-        Ok(json!({"teams": out}))
+        Ok(json!({"teams": self.teams_with_quota(Some(&root))?, "note": "hand_off accepts team \"auto\": the team with the most quota left"}))
     }
 
     /// Messages queued for the caller (they would otherwise arrive when its turn ends).
@@ -191,7 +175,7 @@ impl Host {
         if from.root_id != target.root_id {
             bail!("you can only message threads in your own run");
         }
-        if freedom(&target.permission_mode) > freedom(&from.permission_mode) {
+        if crate::freedom::rank(&target.permission_mode) > crate::freedom::rank(&from.permission_mode) {
             bail!("that thread runs with more freedom than yours");
         }
         let how = self.deliver(to, Some(caller), text).await?;

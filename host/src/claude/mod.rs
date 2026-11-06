@@ -1,6 +1,6 @@
 //! The Claude Code adapter.
 mod launch;
-mod mapper;
+pub(crate) mod mapper;
 mod session;
 mod wire;
 
@@ -12,3 +12,5 @@ pub use launch::{CONTROL_ROOM, Launch, find_claude};
 pub const STEERS_MID_TURN: bool = false;
 pub use mapper::Mapper;
 pub use session::ClaudeSession;
+
+pub use mapper::usage::usage_reply;

@@ -6,7 +6,7 @@ use crate::record::{Entry, Recorder};
 use anyhow::{Context, Result};
 use curia_core::{Decision, Event};
 use serde_json::Value;
-use std::collections::VecDeque;
+use std::collections::{HashMap, VecDeque};
 use std::path::Path;
 use std::sync::atomic::{AtomicU64, Ordering};
 use std::sync::{Arc, Mutex};
@@ -25,6 +25,8 @@ pub struct ClaudeSession {
     stderr_tail: Mutex<VecDeque<String>>,
     kill: Mutex<Option<oneshot::Sender<()>>>,
     next_control: AtomicU64,
+    /// Control requests waiting for Claude's reply, by request id.
+    replies: Mutex<HashMap<String, oneshot::Sender<Result<Value, String>>>>,
 }
 
 fn lock<T>(m: &Mutex<T>) -> std::sync::MutexGuard<'_, T> {
@@ -51,6 +53,7 @@ impl ClaudeSession {
             stderr_tail: Mutex::new(VecDeque::new()),
             kill: Mutex::new(Some(kill_tx)),
             next_control: AtomicU64::new(0),
+            replies: Mutex::new(HashMap::new()),
         });
 
         let me = s.clone();
@@ -99,6 +102,7 @@ impl ClaudeSession {
     async fn on_line(&self, line: String) {
         self.record(Entry::Out { ms: self.ms(), line: line.clone() });
         let step = match serde_json::from_str::<Value>(&line) {
+            Ok(v) if v["type"] == "control_response" && self.answered(&v) => return,
             Ok(v) => lock(&self.mapper).handle(&v),
             Err(_) => {
                 self.emit(vec![Event::Notice { text: format!("Unreadable line from Claude: {line}") }]);
@@ -157,6 +161,44 @@ impl ClaudeSession {
     async fn control(&self, request: Value) -> Result<()> {
         let id = format!("curia-{}", self.next_control.fetch_add(1, Ordering::Relaxed) + 1);
         self.write(&wire::control(&id, request)).await
+    }
+
+    /// The account's usage windows right now (no model turn, no quota spent).
+    pub async fn usage(&self) -> Result<Vec<curia_core::UsageWindow>> {
+        Ok(super::usage_reply(&self.ask(wire::get_usage()).await?))
+    }
+
+    /// Sends a control request and waits (up to 30 s) for Claude's reply.
+    pub async fn ask(&self, request: Value) -> Result<Value> {
+        let id = format!("curia-{}", self.next_control.fetch_add(1, Ordering::Relaxed) + 1);
+        let (tx, rx) = oneshot::channel();
+        lock(&self.replies).insert(id.clone(), tx);
+        if let Err(e) = self.write(&wire::control(&id, request)).await {
+            lock(&self.replies).remove(&id);
+            return Err(e);
+        }
+        match tokio::time::timeout(std::time::Duration::from_secs(30), rx).await {
+            Ok(Ok(Ok(v))) => Ok(v),
+            Ok(Ok(Err(e))) => anyhow::bail!("Claude refused the request: {e}"),
+            Ok(Err(_)) => anyhow::bail!("Claude closed before replying"),
+            Err(_) => {
+                lock(&self.replies).remove(&id);
+                anyhow::bail!("Claude did not reply within 30 s")
+            }
+        }
+    }
+
+    /// Hands a control reply to the request waiting for it. False if nobody waits for it.
+    fn answered(&self, v: &Value) -> bool {
+        let r = &v["response"];
+        let Some(tx) = r["request_id"].as_str().and_then(|id| lock(&self.replies).remove(id)) else { return false };
+        let result = if r["subtype"] == "error" {
+            Err(r["error"].as_str().unwrap_or("unknown error").to_string())
+        } else {
+            Ok(r["response"].clone())
+        };
+        let _ = tx.send(result);
+        true
     }
 
     async fn write(&self, frame: &Value) -> Result<()> {

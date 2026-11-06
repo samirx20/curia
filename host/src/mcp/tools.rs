@@ -18,7 +18,8 @@ pub struct ControlRoom {
 #[derive(Deserialize, schemars::JsonSchema)]
 #[schemars(crate = "rmcp::schemars")]
 pub struct HandOff {
-    /// The team to give the task to (a name from list_teams).
+    /// The team to give the task to: a name from list_teams, or "auto" for the team with the
+    /// most quota left.
     team: String,
     /// A short title for the task, shown to the user.
     title: String,

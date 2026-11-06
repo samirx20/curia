@@ -111,4 +111,19 @@ pub const MIGRATIONS: &[&str] = &[
         state TEXT NOT NULL,
         created_at INTEGER NOT NULL
     );",
+    // 3: quota and the inbox. Each team's usage windows and how long it is out of quota;
+    // host settings; when a thread continues after a limit resets; how many automatic
+    // continues in a row a thread has had (capped, so a turn that keeps crashing stops).
+    "CREATE TABLE team_usage (
+        team_id TEXT NOT NULL REFERENCES teams(id) ON DELETE CASCADE,
+        window TEXT NOT NULL,
+        utilization REAL,
+        resets_at INTEGER,
+        updated_at INTEGER NOT NULL,
+        PRIMARY KEY (team_id, window)
+    );
+    ALTER TABLE teams ADD COLUMN limited_until INTEGER;
+    CREATE TABLE settings (key TEXT PRIMARY KEY, value TEXT NOT NULL);
+    ALTER TABLE threads ADD COLUMN resume_at INTEGER;
+    ALTER TABLE threads ADD COLUMN auto_continues INTEGER NOT NULL DEFAULT 0;",
 ];

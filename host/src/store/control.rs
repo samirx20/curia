@@ -137,3 +137,34 @@ impl Store {
         Ok(last)
     }
 }
+
+impl Store {
+    /// Every approval and question still waiting, oldest first, with its thread's title.
+    pub fn pending_requests(&self) -> Result<Vec<serde_json::Value>> {
+        let conn = self.conn();
+        let mut stmt = conn.prepare(
+            "SELECT r.thread_id, t.title, r.request_id, r.kind, r.tool_name, r.input, r.created_at
+             FROM requests r JOIN threads t ON t.id = r.thread_id WHERE r.status = 'pending' ORDER BY r.created_at",
+        )?;
+        let rows = stmt.query_map([], |r| {
+            Ok(serde_json::json!({
+                "thread_id": r.get::<_, String>(0)?, "thread_title": r.get::<_, String>(1)?,
+                "request_id": r.get::<_, String>(2)?, "kind": r.get::<_, String>(3)?, "tool_name": r.get::<_, String>(4)?,
+                "input": serde_json::from_str::<serde_json::Value>(&r.get::<_, String>(5)?).unwrap_or_default(),
+                "created_at": r.get::<_, i64>(6)?,
+            }))
+        })?;
+        Ok(rows.collect::<rusqlite::Result<Vec<_>>>()?)
+    }
+}
+
+impl Store {
+    /// Whether a request is still waiting for an answer.
+    pub fn request_pending(&self, thread_id: &str, request_id: &str) -> Result<bool> {
+        let status: Option<String> = self
+            .conn()
+            .query_row("SELECT status FROM requests WHERE thread_id = ?1 AND request_id = ?2", [thread_id, request_id], |r| r.get(0))
+            .optional()?;
+        Ok(status.as_deref() == Some("pending"))
+    }
+}

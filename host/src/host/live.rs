@@ -50,7 +50,7 @@ impl Host {
             cwd: row.cwd.clone().into(),
             model: row.model.clone(),
             effort: row.effort.clone(),
-            permission_mode: row.permission_mode.clone(),
+            permission_mode: crate::freedom::claude_mode(&row.permission_mode).to_string(),
             resume: row.native_session_id.clone(),
             append_system_prompt: mcp_config.as_ref().map(|_| super::control::instructions(row).to_string()),
             mcp_config,
@@ -66,6 +66,8 @@ impl Host {
         };
         let live = Arc::new(Live { session, pending_before: Mutex::new(None), open_tools: AtomicI64::new(0) });
         lock(&self.live).insert(row.id.clone(), live.clone());
+        let (me, id, session) = (self.clone(), row.id.clone(), live.session.clone());
+        tokio::spawn(async move { me.refresh_usage(&id, &session).await });
         tokio::spawn(self.clone().pump(row.id.clone(), row.cwd.clone(), live.clone(), rx, token));
         Ok(live)
     }
@@ -113,10 +115,23 @@ impl Host {
                     live.open_tools.fetch_sub(1, Ordering::SeqCst);
                 }
                 Event::TurnFinished { .. } => live.open_tools.store(0, Ordering::SeqCst),
+                Event::Usage { windows, limited } => {
+                    if let Err(e) = self.usage_seen(&thread_id, windows, *limited) {
+                        eprintln!("curia-host: could not save usage: {e:#}");
+                    }
+                }
                 _ => {}
             }
             let exited = matches!(event, Event::Exited { .. });
-            if let Err(e) = self.store_one(&thread_id, &cwd, &live, event).await {
+            let asked = match &event {
+                Event::ApprovalRequested { request_id, tool_name, input, .. } => Some((request_id.clone(), tool_name.clone(), input.clone())),
+                _ => None,
+            };
+            let stored = self.store_one(&thread_id, &cwd, &live, event).await;
+            if let (Ok(()), Some((request_id, tool, input))) = (&stored, asked) {
+                self.request_arrived(&thread_id, &request_id, &tool, &input);
+            }
+            if let Err(e) = stored {
                 eprintln!("curia-host: could not store an event for thread {thread_id}: {e:#}");
                 let text = format!("Curia could not save part of this thread: {e:#}");
                 let _ = self.events.send(HostEvent { thread_id: thread_id.clone(), seq: None, event: Event::Notice { text } });

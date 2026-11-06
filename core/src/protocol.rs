@@ -35,6 +35,14 @@ pub enum Call {
     TeamCreate { team: NewTeamParams },
     /// Undoes a hand-back merge (its id is in the `hand_back` event).
     MergeUndo { merge_id: String },
+    /// Moves an idle thread to another team of the same CLI (its conversation continues).
+    ThreadMove { thread_id: String, team: String },
+    /// The host's settings, as a JSON object.
+    SettingsGet,
+    /// Replaces the host's settings (send back the object from `settings_get`, edited).
+    SettingsSet { settings: Value },
+    /// Every approval and question waiting for an answer, across all threads.
+    InboxList,
 }
 
 /// A new run's main thread (team threads are made by `hand_off`).

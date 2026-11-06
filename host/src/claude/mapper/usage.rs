@@ -18,6 +18,25 @@ pub(super) fn rate_limit(v: &Value) -> Event {
     Event::Usage { windows, limited: info["status"] == "rejected" }
 }
 
+/// The windows in a `get_usage` reply. Unlike `rate_limit_event` (a 0–1 fraction and epoch
+/// seconds), it gives a 0–100 percentage and an ISO date (checked on 2.1.318).
+pub fn usage_reply(body: &Value) -> Vec<UsageWindow> {
+    let Some(limits) = body["rate_limits"].as_object() else { return Vec::new() };
+    let mut windows = Vec::new();
+    for (name, w) in limits {
+        let Some(pct) = w.get("utilization").and_then(Value::as_f64) else { continue };
+        if !(name == "five_hour" || name.starts_with("seven_day")) {
+            continue;
+        }
+        let resets_at_ms = w["resets_at"]
+            .as_str()
+            .and_then(|s| chrono::DateTime::parse_from_rfc3339(s).ok())
+            .map(|d| d.timestamp_millis());
+        windows.push(UsageWindow { name: name.clone(), utilization: Some(pct / 100.0), resets_at_ms });
+    }
+    windows
+}
+
 /// The turn's outcome from its `result` frame.
 pub(super) fn outcome(v: &Value) -> TurnOutcome {
     if v["terminal_reason"].as_str().is_some_and(|r| r.starts_with("aborted")) {
@@ -58,6 +77,22 @@ mod tests {
         assert!(usage_limited(&json!({"is_error": true, "result": "Claude usage limit reached. Your limit will reset at 7pm"})));
         assert!(!usage_limited(&json!({"is_error": true, "result": "Tool failed"})));
         assert!(!usage_limited(&json!({"is_error": false, "terminal_reason": "blocking_limit"})));
+    }
+
+    #[test]
+    fn a_get_usage_reply_becomes_windows() {
+        let body = json!({"rate_limits": {
+            "five_hour": {"utilization": 8, "resets_at": "2026-11-06T16:49:59.562421+00:00"},
+            "seven_day": {"utilization": 10, "resets_at": "2026-11-10T08:59:59+00:00"},
+            "seven_day_opus": null,
+            "extra_usage": {"utilization": null}
+        }});
+        let mut w = usage_reply(&body);
+        w.sort_by(|a, b| a.name.cmp(&b.name));
+        assert_eq!(w.len(), 2);
+        assert_eq!((w[0].name.as_str(), w[0].utilization), ("five_hour", Some(0.08)));
+        assert_eq!(w[0].resets_at_ms, Some(1793983799562));
+        assert_eq!((w[1].name.as_str(), w[1].utilization), ("seven_day", Some(0.10)));
     }
 
     #[test]

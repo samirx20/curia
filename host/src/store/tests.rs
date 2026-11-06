@@ -76,7 +76,7 @@ fn recovery_expires_requests_ends_subagents_and_cuts_turns() {
         .unwrap();
 
     let done = store.recover().unwrap();
-    assert_eq!(done, Recovered { threads: vec![a.id.clone()], turns: 1, requests: 1, subagents: 1 });
+    assert_eq!(done, Recovered { threads: vec![a.id.clone()], turns: 1, requests: 1, subagents: 1, cut: vec![a.id.clone()], waiting: vec![a.id.clone()] });
     let tail: Vec<Event> = store.events_after(&a.id, 0).unwrap().into_iter().map(|s| s.event).skip(3).collect();
     assert_eq!(tail, vec![
         Event::ApprovalResolved { request_id: "r-1".into(), resolution: Resolution::Expired },

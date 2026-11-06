@@ -25,6 +25,8 @@ pub async fn run(data: PathBuf, pick: Pick) -> Result<()> {
             recovered.turns, recovered.requests, recovered.subagents);
     }
     crate::mcp::start(host.clone()).await?;
+    host.start_ticker();
+    host.continue_after_restart(&recovered).await?;
     let row = match pick {
         Pick::New(t) => host.create_thread(&t)?,
         Pick::Thread(id) => host.store.thread_get(&id)?,

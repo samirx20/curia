@@ -2,6 +2,7 @@
 //!   curia --data <dir> threads
 //!   curia --data <dir> teams | team-add --name N --config-dir <dir> [--cli claude] [--model M] [--effort E]
 //!   curia --data <dir> new --team N --cwd <dir> [--title T] [--model M] [--effort E] [--mode M]
+//!   curia --data <dir> move (--thread <id> | --last) --team N | settings | set --key K --value V | inbox
 //!   curia --data <dir> watch (--thread <id> | --last) [--after N]
 //!   curia --data <dir> chat (--thread <id> | --last)
 use anyhow::{Context, Result, bail};
@@ -13,7 +14,7 @@ use std::path::PathBuf;
 use std::sync::{Arc, Mutex};
 use tokio::io::{AsyncBufReadExt, BufReader};
 
-const USAGE: &str = "usage: curia --data <dir> (threads | teams | team-add --name N --config-dir <dir> | new --team N --cwd <dir> [--model M] [--effort E] [--mode M] | watch (--thread <id> | --last) [--after N] | chat (--thread <id> | --last))";
+const USAGE: &str = "usage: curia --data <dir> (threads | teams | team-add --name N --config-dir <dir> | new --team N --cwd <dir> [--model M] [--effort E] [--mode M] | move (--thread <id> | --last) --team N | settings | set --key K --value V | inbox | watch (--thread <id> | --last) [--after N] | chat (--thread <id> | --last))";
 
 #[tokio::main]
 async fn main() -> Result<()> {
@@ -50,15 +51,44 @@ async fn main() -> Result<()> {
                 cwd: get("cwd").context("--cwd is required")?,
                 model: get("model"),
                 effort: get("effort"),
-                permission_mode: get("mode").unwrap_or_else(|| "manual".into()),
+                permission_mode: get("mode").unwrap_or_else(|| "ask".into()),
             };
             let t: ThreadInfo = parse(link.call(Call::ThreadCreate { thread }).await?)?;
             println!("{}", t.id);
             Ok(())
         }
         Some("teams") => {
-            for t in parse::<Vec<TeamInfo>>(link.call(Call::TeamsList).await?)? {
-                println!("{}  {}  {}", t.name, t.cli, t.model.unwrap_or_default());
+            for t in parse::<Vec<serde_json::Value>>(link.call(Call::TeamsList).await?)? {
+                let pct = |k: &str| t[k].as_f64().map_or("?".to_string(), |v| format!("{v}%"));
+                let out = if t["out_of_quota_until_ms"].is_null() { "" } else { "  OUT OF QUOTA" };
+                println!("{}  {}  {}  5h left {}  week left {}{out}", t["name"].as_str().unwrap_or(""), t["cli"].as_str().unwrap_or(""),
+                    t["model"].as_str().unwrap_or(""), pct("five_hour_percent_left"), pct("weekly_percent_left"));
+            }
+            Ok(())
+        }
+        Some("move") => {
+            let team = flags.get("team").context("--team is required")?.clone();
+            link.call(Call::ThreadMove { thread_id: thread_id(&link, &flags).await?, team }).await?;
+            println!("moved");
+            Ok(())
+        }
+        Some("settings") => {
+            println!("{}", serde_json::to_string_pretty(&link.call(Call::SettingsGet).await?)?);
+            Ok(())
+        }
+        Some("set") => {
+            let key = flags.get("key").context("--key is required")?;
+            let raw = flags.get("value").context("--value is required")?;
+            let value = serde_json::from_str(raw).unwrap_or(serde_json::Value::String(raw.clone()));
+            let mut settings = link.call(Call::SettingsGet).await?;
+            settings[key.as_str()] = value;
+            println!("{}", serde_json::to_string_pretty(&link.call(Call::SettingsSet { settings }).await?)?);
+            Ok(())
+        }
+        Some("inbox") => {
+            for r in parse::<Vec<serde_json::Value>>(link.call(Call::InboxList).await?)? {
+                println!("{}  {}  {}  in \"{}\" ({})", r["request_id"].as_str().unwrap_or(""), r["kind"].as_str().unwrap_or(""),
+                    r["tool_name"].as_str().unwrap_or(""), r["thread_title"].as_str().unwrap_or(""), r["thread_id"].as_str().unwrap_or(""));
             }
             Ok(())
         }

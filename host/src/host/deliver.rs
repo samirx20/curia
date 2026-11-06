@@ -13,6 +13,9 @@ impl Host {
     /// Delivers `text` to a thread from another thread (`from`) or from the user (`None`).
     /// Returns how: `started` a turn, `steered` into the running one, or `queued`.
     pub async fn deliver(self: &Arc<Self>, to: &str, from: Option<&str>, text: &str) -> Result<&'static str> {
+        if from.is_none() && text != super::quota::CONTINUE {
+            self.store.thread_auto_continues(to, true)?; // a person carried on: the count starts again
+        }
         let framed = match from {
             Some(id) => {
                 let sender = self.store.thread_get(id).map(|t| t.title).unwrap_or_else(|_| id.to_string());
@@ -58,6 +61,11 @@ impl Host {
     /// Boxed: delivering can start a thread, whose event task calls this again.
     pub(super) fn after_turn(self: Arc<Self>, thread_id: String, turn_id: String, outcome: TurnOutcome) -> Pin<Box<dyn Future<Output = ()> + Send>> {
         Box::pin(async move {
+            if matches!(outcome, TurnOutcome::UsageLimited { .. }) {
+                if let Err(e) = self.out_of_quota(&thread_id).await {
+                    let _ = self.record(&thread_id, &[Event::Notice { text: format!("Curia could not handle the quota limit: {e:#}") }]);
+                }
+            }
             if let Err(e) = self.hand_back(&thread_id, &turn_id, &outcome).await {
                 let text = format!("Curia could not hand this thread's result back: {e:#}");
                 let _ = self.record(&thread_id, &[Event::Notice { text }]);

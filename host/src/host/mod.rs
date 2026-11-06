@@ -3,11 +3,15 @@
 mod ask;
 mod control;
 mod deliver;
+mod inbox;
 mod live;
 mod ops;
+mod quota;
 
 #[cfg(test)]
 mod tests;
+#[cfg(test)]
+mod tests_quota;
 
 use crate::claude::find_claude;
 use crate::store::{Recovered, Store};

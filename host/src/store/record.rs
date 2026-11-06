@@ -31,7 +31,11 @@ impl Store {
         let now = now_ms();
         let mut turn = running_turn(&tx, thread_id)?;
         let mut stored = Vec::new();
-        for event in events.iter().filter(|e| !matches!(e, Event::TextDelta { .. })) {
+        for original in events.iter().filter(|e| !matches!(e, Event::TextDelta { .. })) {
+            // Secrets never reach the database or a client.
+            let mut redacted = original.clone();
+            crate::redact::event(&mut redacted);
+            let event = &redacted;
             if let Event::TurnStarted { prompt } = event {
                 let id = new_id();
                 tx.execute(

@@ -13,6 +13,10 @@ pub struct Recovered {
     pub turns: usize,
     pub requests: usize,
     pub subagents: usize,
+    /// Threads whose turn was cut off.
+    pub cut: Vec<String>,
+    /// Threads that had an approval or question waiting when the host stopped.
+    pub waiting: Vec<String>,
 }
 
 impl Store {
@@ -24,6 +28,9 @@ impl Store {
             let mut q = conn.prepare("SELECT thread_id, request_id FROM requests WHERE status = 'pending' ORDER BY created_at")?;
             for row in q.query_map([], |r| Ok((r.get::<_, String>(0)?, r.get::<_, String>(1)?)))? {
                 let (thread, request_id) = row?;
+                if !done.waiting.contains(&thread) {
+                    done.waiting.push(thread.clone());
+                }
                 per_thread.entry(thread).or_default().push(Event::ApprovalResolved { request_id, resolution: Resolution::Expired });
                 done.requests += 1;
             }
@@ -35,7 +42,9 @@ impl Store {
             }
             let mut q = conn.prepare("SELECT thread_id FROM turns WHERE status = 'running'")?;
             for row in q.query_map([], |r| r.get::<_, String>(0))? {
-                let events = per_thread.entry(row?).or_default();
+                let thread = row?;
+                done.cut.push(thread.clone());
+                let events = per_thread.entry(thread).or_default();
                 events.push(Event::Notice { text: "The host restarted during this turn, so it was cut off.".into() });
                 events.push(Event::TurnFinished { outcome: TurnOutcome::Interrupted, cost_usd: None });
                 done.turns += 1;

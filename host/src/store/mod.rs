@@ -6,12 +6,16 @@ mod pages;
 mod record;
 mod recover;
 mod schema;
+mod settings;
 mod teams;
 mod threads;
+mod usage;
 
 pub use control::MergeRow;
 pub use record::Stored;
 pub use recover::Recovered;
+pub use settings::Settings;
+pub use teams::TeamRow;
 
 pub use threads::{NewThread, ThreadRow};
 

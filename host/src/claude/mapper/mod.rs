@@ -2,7 +2,7 @@
 //! replay through exactly the code that handles live ones.
 //! Rules from Agent Hub's parked Rust app (`chat/mapper.rs`, `chat/turn.rs`, `chat/session.rs`).
 mod stream;
-mod usage;
+pub(crate) mod usage;
 
 use anyhow::{Result, bail};
 use curia_core::{Decision, Event, ItemId, RequestKind, Resolution, TurnOutcome};
