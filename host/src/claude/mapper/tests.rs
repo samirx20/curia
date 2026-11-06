@@ -115,6 +115,20 @@ fn claude_can_start_a_turn_by_itself() {
 }
 
 #[test]
+fn a_message_written_mid_turn_gets_its_own_turn() {
+    // Seen live on 2.1.318: the running turn finishes without it, then Claude starts a turn
+    // for it (with a fresh `init`).
+    let mut m = Mapper::new();
+    let init = json!({"type": "system", "subtype": "init", "session_id": "s-1", "model": "m"});
+    m.begin_turn("count to 400");
+    feed(&mut m, &[init.clone()]);
+    assert!(m.begin_turn("then say BANANA").is_empty(), "nothing starts while a turn runs");
+    feed(&mut m, &[json!({"type": "result", "is_error": false})]);
+    let events = feed(&mut m, &[init]);
+    assert_eq!(events, vec![Event::TurnStarted { prompt: Some("then say BANANA".into()) }]);
+}
+
+#[test]
 fn only_agent_tasks_are_subagents() {
     let mut m = Mapper::new();
     let task = |id: &str, kind: &str| json!({"type": "system", "subtype": "task_started", "task_id": id,

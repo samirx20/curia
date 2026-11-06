@@ -31,17 +31,41 @@ pub enum Call {
     ThreadSend { thread_id: String, text: String },
     ThreadAnswer { thread_id: String, request_id: String, decision: Decision },
     ThreadInterrupt { thread_id: String },
+    TeamsList,
+    TeamCreate { team: NewTeamParams },
+    /// Undoes a hand-back merge (its id is in the `hand_back` event).
+    MergeUndo { merge_id: String },
 }
 
+/// A new run's main thread (team threads are made by `hand_off`).
 #[derive(Debug, Clone, PartialEq, Serialize, Deserialize)]
 pub struct NewThreadParams {
     pub title: String,
-    pub cli: String,
-    pub config_dir: String,
+    /// The team (by name) whose account runs this thread.
+    pub team: String,
+    /// The run's folder: a git repository, so hand-offs can give teams their own branch.
     pub cwd: String,
     pub model: Option<String>,
     pub effort: Option<String>,
     pub permission_mode: String,
+}
+
+#[derive(Debug, Clone, PartialEq, Serialize, Deserialize)]
+pub struct NewTeamParams {
+    pub name: String,
+    pub cli: String,
+    /// The account's own config folder (`CLAUDE_CONFIG_DIR`, …).
+    pub config_dir: String,
+    pub model: Option<String>,
+    pub effort: Option<String>,
+}
+
+#[derive(Debug, Clone, PartialEq, Serialize, Deserialize)]
+pub struct TeamInfo {
+    pub id: String,
+    pub name: String,
+    pub cli: String,
+    pub model: Option<String>,
 }
 
 #[derive(Debug, Clone, PartialEq, Serialize, Deserialize)]

@@ -1,18 +1,19 @@
 //! `curia`: a command-line client that talks to a running host only over the link.
 //!   curia --data <dir> threads
-//!   curia --data <dir> new --config-dir <dir> --cwd <dir> [--model M] [--effort E] [--mode M]
+//!   curia --data <dir> teams | team-add --name N --config-dir <dir> [--cli claude] [--model M] [--effort E]
+//!   curia --data <dir> new --team N --cwd <dir> [--title T] [--model M] [--effort E] [--mode M]
 //!   curia --data <dir> watch (--thread <id> | --last) [--after N]
 //!   curia --data <dir> chat (--thread <id> | --last)
 use anyhow::{Context, Result, bail};
 use curia_client::{Incoming, Link, parse};
-use curia_core::protocol::{Call, NewThreadParams, Opened, ThreadInfo, WireEvent};
+use curia_core::protocol::{Call, NewTeamParams, NewThreadParams, Opened, TeamInfo, ThreadInfo, WireEvent};
 use curia_core::{Decision, Event};
 use std::collections::HashMap;
 use std::path::PathBuf;
 use std::sync::{Arc, Mutex};
 use tokio::io::{AsyncBufReadExt, BufReader};
 
-const USAGE: &str = "usage: curia --data <dir> (threads | new --config-dir <dir> --cwd <dir> [--model M] [--effort E] [--mode M] | watch (--thread <id> | --last) [--after N] | chat (--thread <id> | --last))";
+const USAGE: &str = "usage: curia --data <dir> (threads | teams | team-add --name N --config-dir <dir> | new --team N --cwd <dir> [--model M] [--effort E] [--mode M] | watch (--thread <id> | --last) [--after N] | chat (--thread <id> | --last))";
 
 #[tokio::main]
 async fn main() -> Result<()> {
@@ -45,8 +46,7 @@ async fn main() -> Result<()> {
             let get = |k: &str| flags.get(k).cloned();
             let thread = NewThreadParams {
                 title: get("title").unwrap_or_else(|| "new thread".into()),
-                cli: "claude".into(),
-                config_dir: get("config-dir").context("--config-dir is required")?,
+                team: get("team").context("--team is required (see `curia teams`)")?,
                 cwd: get("cwd").context("--cwd is required")?,
                 model: get("model"),
                 effort: get("effort"),
@@ -54,6 +54,25 @@ async fn main() -> Result<()> {
             };
             let t: ThreadInfo = parse(link.call(Call::ThreadCreate { thread }).await?)?;
             println!("{}", t.id);
+            Ok(())
+        }
+        Some("teams") => {
+            for t in parse::<Vec<TeamInfo>>(link.call(Call::TeamsList).await?)? {
+                println!("{}  {}  {}", t.name, t.cli, t.model.unwrap_or_default());
+            }
+            Ok(())
+        }
+        Some("team-add") => {
+            let get = |k: &str| flags.get(k).cloned();
+            let team = NewTeamParams {
+                name: get("name").context("--name is required")?,
+                cli: get("cli").unwrap_or_else(|| "claude".into()),
+                config_dir: get("config-dir").context("--config-dir is required")?,
+                model: get("model"),
+                effort: get("effort"),
+            };
+            let t: TeamInfo = parse(link.call(Call::TeamCreate { team }).await?)?;
+            println!("added team {}", t.name);
             Ok(())
         }
         Some("watch") => watch(&link, events, thread_id(&link, &flags).await?, flags.get("after").map(|a| a.parse()).transpose()?).await,
@@ -130,6 +149,7 @@ async fn chat(link: &Link, mut events: tokio::sync::mpsc::UnboundedReceiver<Inco
             "/stop" => Call::ThreadInterrupt { thread_id: id.clone() },
             "/allow" => Call::ThreadAnswer { thread_id: id.clone(), request_id: take()?, decision: Decision::Allow },
             "/deny" => Call::ThreadAnswer { thread_id: id.clone(), request_id: take()?, decision: Decision::Deny { message: None } },
+            undo if undo.starts_with("/undo ") => Call::MergeUndo { merge_id: undo[6..].trim().to_string() },
             text => Call::ThreadSend { thread_id: id.clone(), text: text.to_string() },
         };
         if let Err(e) = link.call(call).await {

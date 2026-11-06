@@ -63,4 +63,52 @@ pub const MIGRATIONS: &[&str] = &[
         ended_at INTEGER,
         PRIMARY KEY (thread_id, task_id)
     );",
+    // 2: the control room. Teams; a thread's team, parent, run (root) and branch; results
+    // handed back; queued messages; merges (so they can be undone).
+    "CREATE TABLE teams (
+        id TEXT PRIMARY KEY,
+        name TEXT NOT NULL UNIQUE,
+        cli TEXT NOT NULL,
+        config_dir TEXT NOT NULL,
+        model TEXT,
+        effort TEXT,
+        created_at INTEGER NOT NULL
+    );
+    ALTER TABLE threads ADD COLUMN team_id TEXT REFERENCES teams(id);
+    ALTER TABLE threads ADD COLUMN parent_id TEXT REFERENCES threads(id);
+    ALTER TABLE threads ADD COLUMN root_id TEXT;
+    ALTER TABLE threads ADD COLUMN depth INTEGER NOT NULL DEFAULT 0;
+    ALTER TABLE threads ADD COLUMN branch TEXT;
+    ALTER TABLE threads ADD COLUMN client_request_id TEXT;
+    CREATE UNIQUE INDEX threads_by_request ON threads(parent_id, client_request_id) WHERE client_request_id IS NOT NULL;
+    CREATE INDEX threads_by_parent ON threads(parent_id);
+    CREATE TABLE results (
+        thread_id TEXT PRIMARY KEY REFERENCES threads(id) ON DELETE CASCADE,
+        parent_id TEXT NOT NULL,
+        state TEXT NOT NULL,
+        summary TEXT,
+        created_at INTEGER NOT NULL,
+        delivered_at INTEGER
+    );
+    CREATE TABLE mailbox (
+        id INTEGER PRIMARY KEY AUTOINCREMENT,
+        thread_id TEXT NOT NULL REFERENCES threads(id) ON DELETE CASCADE,
+        from_thread TEXT,
+        text TEXT NOT NULL,
+        state TEXT NOT NULL,
+        created_at INTEGER NOT NULL
+    );
+    CREATE INDEX mailbox_queued ON mailbox(thread_id, state);
+    CREATE TABLE merges (
+        id TEXT PRIMARY KEY,
+        thread_id TEXT NOT NULL REFERENCES threads(id) ON DELETE CASCADE,
+        from_thread TEXT NOT NULL,
+        cwd TEXT NOT NULL,
+        branch TEXT NOT NULL,
+        pre_head TEXT NOT NULL,
+        merge_commit TEXT NOT NULL,
+        checkpoint TEXT NOT NULL,
+        state TEXT NOT NULL,
+        created_at INTEGER NOT NULL
+    );",
 ];

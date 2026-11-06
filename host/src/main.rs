@@ -8,6 +8,7 @@ mod dev;
 mod git;
 mod host;
 mod link;
+mod mcp;
 mod process;
 mod record;
 mod scrub;
@@ -53,6 +54,7 @@ fn dev_args(args: &[String]) -> Result<(PathBuf, dev::Pick)> {
         model: None,
         effort: None,
         permission_mode: "manual".into(),
+        ..Default::default()
     };
     let mut it = args.iter();
     while let Some(flag) = it.next() {
@@ -98,6 +100,8 @@ async fn serve(args: &[String]) -> Result<()> {
     if !recovered.threads.is_empty() {
         println!("Recovered after a restart: {} turn(s) cut off, {} approval(s) expired.", recovered.turns, recovered.requests);
     }
+    let control_room = mcp::start(host.clone()).await?;
+    println!("Control room (MCP) at {control_room}");
     let shutdown = async {
         let _ = tokio::signal::ctrl_c().await;
     };

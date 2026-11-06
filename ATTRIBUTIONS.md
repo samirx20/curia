@@ -94,4 +94,37 @@ Checked 2026-11-06 with `cargo metadata` (every crate the build resolves).
 | log | 0.4.35 | MIT OR Apache-2.0 | tungstenite |
 | socket2 | 0.6.5 | MIT OR Apache-2.0 | tokio |
 
+### Control room: MCP server (added 2026-11-06)
+
+| Crate | Version | Licence | Pulled in by |
+|---|---|---|---|
+| rmcp, rmcp-macros | 3.9.0 | Apache-2.0 | host (the official Rust MCP SDK) |
+| schemars, schemars_derive | 1.2.3 | MIT | rmcp (tool input schemas) |
+| serde_derive_internals | 0.30.0 | MIT OR Apache-2.0 | schemars_derive (build time) |
+| dyn-clone | 1.0.20 | MIT OR Apache-2.0 | schemars |
+| ref-cast, ref-cast-impl | 1.0.27 | MIT OR Apache-2.0 | schemars |
+| indexmap | 2.14.2 | Apache-2.0 OR MIT | rmcp |
+| equivalent | 1.0.3 | Apache-2.0 OR MIT | indexmap |
+| chrono | 0.4.45 | MIT OR Apache-2.0 | rmcp, schemars |
+| num-traits | 0.2.19 | MIT OR Apache-2.0 | chrono |
+| autocfg | 1.5.1 | Apache-2.0 OR MIT | num-traits (build time) |
+| iana-time-zone | 0.1.65 | MIT OR Apache-2.0 | chrono |
+| windows-core, windows-implement, windows-interface, windows-result, windows-strings | 0.62.2, 0.60.2, 0.59.3, 0.4.1, 0.5.1 | MIT OR Apache-2.0 | iana-time-zone (Windows) |
+| async-trait | 0.1.92 | MIT OR Apache-2.0 | rmcp |
+| pastey | 0.2.3 | MIT OR Apache-2.0 | rmcp |
+| sha2 | 0.11.1 | MIT OR Apache-2.0 | rmcp |
+| hybrid-array | 0.4.15 | MIT OR Apache-2.0 | sha2's digest crates |
+| const-oid | 0.10.2 | Apache-2.0 OR MIT | digest |
+| chacha20 | 0.10.2 | MIT OR Apache-2.0 | rand |
+| sse-stream | 0.2.6 | MIT OR Apache-2.0 | rmcp |
+| tokio-stream | 0.1.19 | MIT | rmcp |
+| tokio-util | 0.7.20 | MIT | rmcp |
+| futures-channel, futures-executor, futures-io | 0.3.34 | MIT OR Apache-2.0 | futures-util |
+| tracing-attributes | 0.1.31 | MIT | tracing |
+| darling, darling_core, darling_macro | 0.24.1 | MIT | rmcp-macros (build time) |
+| ident_case | 1.0.1 | MIT/Apache-2.0 | darling_core (build time) |
+| strsim | 0.11.1 | MIT | darling_core (build time) |
+
+Only built on Android or Haiku, never here: android_system_properties 0.1.6, iana-time-zone-haiku 0.1.2 (MIT OR Apache-2.0). Only on macOS/iOS: core-foundation-sys 0.8.7 (MIT OR Apache-2.0).
+
 Listed by Cargo but only built for WebAssembly targets, never for Windows, Linux or macOS: sqlite-wasm-rs 0.6.2 (MIT), rsqlite-vfs 0.2.0 (MIT), thiserror / thiserror-impl 2.0.21 (MIT OR Apache-2.0), wasm-bindgen 0.2.130 and its macro crates (MIT OR Apache-2.0), js-sys 0.3.107 (MIT OR Apache-2.0), bumpalo 3.20.3 (MIT OR Apache-2.0), rustversion 1.0.23 (MIT OR Apache-2.0), wasip2 1.0.4 and wit-bindgen 0.57.1 (Apache-2.0 WITH LLVM-exception OR Apache-2.0 OR MIT).

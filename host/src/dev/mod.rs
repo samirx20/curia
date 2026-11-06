@@ -24,6 +24,7 @@ pub async fn run(data: PathBuf, pick: Pick) -> Result<()> {
         println!("Recovered after a restart: {} turn(s) cut off, {} approval(s) expired, {} subagent(s) ended.",
             recovered.turns, recovered.requests, recovered.subagents);
     }
+    crate::mcp::start(host.clone()).await?;
     let row = match pick {
         Pick::New(t) => host.create_thread(&t)?,
         Pick::Thread(id) => host.store.thread_get(&id)?,
@@ -117,6 +118,6 @@ async fn command(host: &Arc<Host>, id: &str, pending: &Mutex<Option<String>>, li
             Ok(())
         }
         c if c.starts_with('/') => bail!("unknown command. {HELP}"),
-        _ => host.send(id, line).await,
+        _ => host.deliver(id, None, line).await.map(|_| ()),
     }
 }

@@ -73,7 +73,7 @@ mod tests {
         let t = store
             .thread_create(&NewThread {
                 title: "t".into(), cli: "claude".into(), config_dir: "c".into(), cwd: ".".into(),
-                model: None, effort: None, permission_mode: "manual".into(),
+                model: None, effort: None, permission_mode: "manual".into(), ..Default::default()
             })
             .unwrap();
         let events: Vec<Event> = (0..n).map(|i| Event::Notice { text: format!("n{i}") }).collect();

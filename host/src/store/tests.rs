@@ -12,6 +12,7 @@ fn thread(store: &Store) -> ThreadRow {
             model: None,
             effort: None,
             permission_mode: "manual".into(),
+            ..Default::default()
         })
         .unwrap()
 }

@@ -18,7 +18,14 @@ pub struct Launch {
     pub permission_mode: String,
     /// The CLI's own session id, to continue an earlier conversation.
     pub resume: Option<String>,
+    /// The control room: an MCP config file naming Curia's server (with this thread's token).
+    pub mcp_config: Option<PathBuf>,
+    /// Added to Claude's system prompt (how this thread uses the control room).
+    pub append_system_prompt: Option<String>,
 }
+
+/// The MCP server name Curia's tools appear under (`mcp__curia__hand_off`, …).
+pub const CONTROL_ROOM: &str = "curia";
 
 impl Launch {
     pub fn args(&self) -> Vec<String> {
@@ -43,6 +50,14 @@ impl Launch {
         if let Some(model) = &self.model {
             a.extend(["--model".into(), model.clone()]);
         }
+        if let Some(path) = &self.mcp_config {
+            // Curia's own tools run without an approval card; everything else still asks.
+            a.extend(["--mcp-config".into(), path.to_string_lossy().into_owned()]);
+            a.extend(["--allowedTools".into(), format!("mcp__{CONTROL_ROOM}")]);
+        }
+        if let Some(prompt) = &self.append_system_prompt {
+            a.extend(["--append-system-prompt".into(), prompt.clone()]);
+        }
         if let Some(id) = &self.resume {
             a.extend(["--resume".into(), id.clone()]);
         }
@@ -54,6 +69,8 @@ impl Launch {
         cmd.args(self.args())
             .current_dir(&self.cwd)
             .env("CLAUDE_CONFIG_DIR", &self.config_dir)
+            // Claude drops an MCP call after 60 s by default; ask_human waits for the user.
+            .env("MCP_TOOL_TIMEOUT", "86400000")
             // Never look like a nested Claude Code session, even when the host was started from one.
             .env_remove("CLAUDECODE")
             .env_remove("CLAUDE_CODE_ENTRYPOINT");
@@ -92,6 +109,8 @@ mod tests {
             effort: Some("low".into()),
             permission_mode: "manual".into(),
             resume: Some("sess-1".into()),
+            mcp_config: Some("mcp.json".into()),
+            append_system_prompt: None,
         };
         let a = l.args().join(" ");
         assert!(a.starts_with("-p --output-format stream-json"));
@@ -99,6 +118,7 @@ mod tests {
         assert!(a.contains("--permission-mode manual"));
         assert!(a.contains("--effort low"));
         assert!(a.contains("--model claude-haiku-5-5"));
+        assert!(a.contains("--mcp-config mcp.json --allowedTools mcp__curia"));
         assert!(a.ends_with("--resume sess-1"));
     }
 }

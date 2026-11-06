@@ -1,10 +1,13 @@
 //! A thread whose CLI is running: its session, and the task that stores its events.
-use super::{Host, HostEvent, lock, snapshot};
-use crate::claude::{ClaudeSession, Launch};
+use super::ops::snapshot;
+use super::{Host, HostEvent, lock};
+use crate::claude::{CONTROL_ROOM, ClaudeSession, Launch};
 use crate::record::Recorder;
 use crate::store::ThreadRow;
-use anyhow::Result;
+use anyhow::{Context, Result};
 use curia_core::Event;
+use std::path::PathBuf;
+use std::sync::atomic::{AtomicI64, Ordering};
 use std::sync::{Arc, Mutex};
 use tokio::sync::mpsc;
 
@@ -12,20 +15,36 @@ pub struct Live {
     pub session: Arc<ClaudeSession>,
     /// The checkpoint taken just before a message that starts a turn; the turn claims it.
     pending_before: Mutex<Option<String>>,
+    /// Tool calls started and not yet finished. Steering a message in while one runs would
+    /// cut it off, so delivery queues instead.
+    open_tools: AtomicI64,
 }
 
 impl Live {
     pub fn set_pending_before(&self, commit: Option<String>) {
         *lock(&self.pending_before) = commit;
     }
+
+    /// Whether a message can be slipped into the running turn now: the CLI must take
+    /// mid-turn messages into the turn, and no tool may be running (it would be cut off).
+    pub fn can_steer(&self) -> bool {
+        crate::claude::STEERS_MID_TURN && self.open_tools.load(Ordering::SeqCst) == 0
+    }
 }
 
 impl Host {
     /// The thread's running CLI, started (resuming its session) if needed.
     pub(super) async fn live(self: &Arc<Self>, row: &ThreadRow) -> Result<Arc<Live>> {
-        if let Some(live) = lock(&self.live).get(&row.id).cloned() {
+        if let Some(live) = self.live_of(&row.id) {
             return Ok(live);
         }
+        let (mcp_config, token) = match self.mcp_url.get() {
+            Some(url) => {
+                let (path, token) = self.write_mcp_config(&row.id, url)?;
+                (Some(path), Some(token))
+            }
+            None => (None, None),
+        };
         let launch = Launch {
             config_dir: row.config_dir.clone().into(),
             cwd: row.cwd.clone().into(),
@@ -33,25 +52,71 @@ impl Host {
             effort: row.effort.clone(),
             permission_mode: row.permission_mode.clone(),
             resume: row.native_session_id.clone(),
+            append_system_prompt: mcp_config.as_ref().map(|_| super::control::instructions(row).to_string()),
+            mcp_config,
         };
         let recorder = Recorder::create(&self.transcript_path(&row.id)?)?;
-        let (session, rx) = ClaudeSession::start(&self.claude_exe()?, &launch, row.items_used, Some(recorder)).await?;
-        let live = Arc::new(Live { session, pending_before: Mutex::new(None) });
+        let started = ClaudeSession::start(&self.claude_exe()?, &launch, row.items_used, Some(recorder)).await;
+        let (session, rx) = match started {
+            Ok(s) => s,
+            Err(e) => {
+                self.revoke(&row.id, token.as_deref());
+                return Err(e);
+            }
+        };
+        let live = Arc::new(Live { session, pending_before: Mutex::new(None), open_tools: AtomicI64::new(0) });
         lock(&self.live).insert(row.id.clone(), live.clone());
-        tokio::spawn(self.clone().pump(row.id.clone(), row.cwd.clone(), live.clone(), rx));
+        tokio::spawn(self.clone().pump(row.id.clone(), row.cwd.clone(), live.clone(), rx, token));
         Ok(live)
     }
 
-    /// Stores each event the CLI produces, takes turn checkpoints, and tells subscribers.
-    async fn pump(self: Arc<Self>, thread_id: String, cwd: String, live: Arc<Live>, mut rx: mpsc::UnboundedReceiver<Event>) {
+    /// Issues a token for this thread and writes the MCP config Claude reads it from.
+    fn write_mcp_config(&self, thread_id: &str, url: &str) -> Result<(PathBuf, String)> {
+        let token = format!("{}{}", uuid::Uuid::new_v4().simple(), uuid::Uuid::new_v4().simple());
+        let dir = self.data_dir.join("mcp");
+        std::fs::create_dir_all(&dir)?;
+        let path = dir.join(format!("{thread_id}.json"));
+        let config = serde_json::json!({"mcpServers": {CONTROL_ROOM: {
+            "type": "http", "url": url, "headers": {"Authorization": format!("Bearer {token}")}}}});
+        std::fs::write(&path, config.to_string()).context("could not write the thread's MCP config")?;
+        lock(&self.tokens).insert(token.clone(), thread_id.to_string());
+        Ok((path, token))
+    }
+
+    /// The thread's CLI is gone: its token stops working and its config file goes.
+    fn revoke(&self, thread_id: &str, token: Option<&str>) {
+        if let Some(t) = token {
+            lock(&self.tokens).remove(t);
+        }
+        let _ = std::fs::remove_file(self.data_dir.join("mcp").join(format!("{thread_id}.json")));
+    }
+
+    fn transcript_path(&self, thread_id: &str) -> Result<PathBuf> {
+        let dir = self.data_dir.join("transcripts").join(thread_id);
+        std::fs::create_dir_all(&dir)?;
+        Ok(dir.join(format!("{}.jsonl", crate::store::now_ms())))
+    }
+
+    /// Stores each event the CLI produces, takes turn checkpoints, tells subscribers, and
+    /// after each turn hands results back and delivers queued messages.
+    async fn pump(self: Arc<Self>, thread_id: String, cwd: String, live: Arc<Live>, mut rx: mpsc::UnboundedReceiver<Event>, token: Option<String>) {
         while let Some(event) = rx.recv().await {
-            if let Event::TextDelta { .. } = event {
-                let _ = self.events.send(HostEvent { thread_id: thread_id.clone(), seq: None, event });
-                continue;
+            match &event {
+                Event::TextDelta { .. } => {
+                    let _ = self.events.send(HostEvent { thread_id: thread_id.clone(), seq: None, event });
+                    continue;
+                }
+                Event::ToolCall { .. } => {
+                    live.open_tools.fetch_add(1, Ordering::SeqCst);
+                }
+                Event::ToolResult { .. } => {
+                    live.open_tools.fetch_sub(1, Ordering::SeqCst);
+                }
+                Event::TurnFinished { .. } => live.open_tools.store(0, Ordering::SeqCst),
+                _ => {}
             }
             let exited = matches!(event, Event::Exited { .. });
             if let Err(e) = self.store_one(&thread_id, &cwd, &live, event).await {
-                // Fail loudly: the client sees it, and so does the log.
                 eprintln!("curia-host: could not store an event for thread {thread_id}: {e:#}");
                 let text = format!("Curia could not save part of this thread: {e:#}");
                 let _ = self.events.send(HostEvent { thread_id: thread_id.clone(), seq: None, event: Event::Notice { text } });
@@ -61,9 +126,10 @@ impl Host {
             }
         }
         lock(&self.live).remove(&thread_id);
+        self.revoke(&thread_id, token.as_deref());
     }
 
-    async fn store_one(&self, thread_id: &str, cwd: &str, live: &Live, event: Event) -> Result<()> {
+    async fn store_one(self: &Arc<Self>, thread_id: &str, cwd: &str, live: &Live, event: Event) -> Result<()> {
         let stored = self.store.record(thread_id, &[event])?;
         self.store.thread_set_items_used(thread_id, live.session.items_used())?;
         for s in stored {
@@ -79,10 +145,11 @@ impl Host {
                         self.store.turn_set_checkpoint(turn, true, &c)?;
                     }
                 }
-                (Event::TurnFinished { .. }, Some(turn)) => {
+                (Event::TurnFinished { outcome, .. }, Some(turn)) => {
                     if let Some(c) = snapshot(cwd, "curia: after turn").await? {
                         self.store.turn_set_checkpoint(turn, false, &c)?;
                     }
+                    tokio::spawn(self.clone().after_turn(thread_id.to_string(), turn.clone(), outcome.clone()));
                 }
                 _ => {}
             }

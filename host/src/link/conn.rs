@@ -9,7 +9,7 @@ use crate::host::{Host, HostEvent};
 use crate::store::NewThread;
 use anyhow::{Result, bail};
 use axum::extract::ws::{Message, WebSocket};
-use curia_core::protocol::{Call, Request, RpcError, WireEvent, code};
+use curia_core::protocol::{Call, Request, RpcError, TeamInfo, WireEvent, code};
 use futures_util::StreamExt;
 use serde_json::{Value, json};
 use std::collections::HashMap;
@@ -123,17 +123,27 @@ async fn dispatch(host: &Arc<Host>, call: Call) -> Result<Value> {
     let result = match call {
         Call::ThreadsList => json!(host.store.threads()?.iter().map(info).collect::<Vec<_>>()),
         Call::ThreadCreate { thread: t } => {
+            let team = host.store.team(&t.team)?;
             let row = host.create_thread(&NewThread {
-                title: t.title, cli: t.cli, config_dir: t.config_dir, cwd: t.cwd,
-                model: t.model, effort: t.effort, permission_mode: t.permission_mode,
+                title: t.title, cli: team.cli, config_dir: team.config_dir, cwd: t.cwd,
+                model: t.model.or(team.model), effort: t.effort.or(team.effort), permission_mode: t.permission_mode,
+                team_id: Some(team.id), ..Default::default()
             })?;
             json!(info(&row))
         }
+        Call::TeamsList => json!(host.store.teams()?.into_iter()
+            .map(|t| TeamInfo { id: t.id, name: t.name, cli: t.cli, model: t.model })
+            .collect::<Vec<_>>()),
+        Call::TeamCreate { team: t } => {
+            let row = host.store.team_create(&t.name, &t.cli, &t.config_dir, t.model.as_deref(), t.effort.as_deref())?;
+            json!(TeamInfo { id: row.id, name: row.name, cli: row.cli, model: row.model })
+        }
+        Call::MergeUndo { merge_id } => host.undo_merge(&merge_id).await.map(|_| Value::Null)?,
         Call::ThreadHistory { thread_id, before_seq, limit } => {
             let page = host.store.events_before(&thread_id, before_seq, limit.min(500))?;
             json!(page.into_iter().map(|s| wire(&thread_id, s)).collect::<Vec<_>>())
         }
-        Call::ThreadSend { thread_id, text } => host.send(&thread_id, &text).await.map(|_| Value::Null)?,
+        Call::ThreadSend { thread_id, text } => json!({"delivered": host.deliver(&thread_id, None, &text).await?}),
         Call::ThreadAnswer { thread_id, request_id, decision } => {
             host.answer(&thread_id, &request_id, &decision).await.map(|_| Value::Null)?
         }

@@ -1,6 +1,25 @@
 //! Git, by running the `git` program (the most dependable way to handle worktrees, merges
 //! and undo). Checkpoints and diffs are in `checkpoint`.
 pub mod checkpoint;
+pub mod merge;
+pub mod worktree;
+
+#[cfg(test)]
+pub(crate) mod tests_support {
+    use std::path::PathBuf;
+
+    /// A scratch repository with one commit (`a.txt`).
+    pub fn repo() -> PathBuf {
+        let d = std::env::temp_dir().join(format!("curia-repo-{}", &crate::store::new_id()[..8]));
+        std::fs::create_dir_all(&d).unwrap();
+        super::run(&d, &["init", "-q", "-b", "main"]).unwrap();
+        std::fs::write(d.join("a.txt"), "one\n").unwrap();
+        super::run(&d, &["add", "."]).unwrap();
+        let who = [("GIT_AUTHOR_NAME", "t"), ("GIT_AUTHOR_EMAIL", "t@t"), ("GIT_COMMITTER_NAME", "t"), ("GIT_COMMITTER_EMAIL", "t@t")];
+        super::run_env(&d, &["commit", "-qm", "init"], &who).unwrap();
+        d
+    }
+}
 
 use anyhow::{Result, bail};
 use std::path::Path;

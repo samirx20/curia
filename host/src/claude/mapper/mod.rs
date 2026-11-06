@@ -7,7 +7,7 @@ mod usage;
 use anyhow::{Result, bail};
 use curia_core::{Decision, Event, ItemId, RequestKind, Resolution, TurnOutcome};
 use serde_json::{Value, json};
-use std::collections::{HashMap, HashSet};
+use std::collections::{HashMap, HashSet, VecDeque};
 
 use super::wire;
 
@@ -43,6 +43,9 @@ pub struct Mapper {
     requests: HashMap<String, Pending>,
     /// Running subagents by task id (background shell tasks are not tracked).
     subagents: HashSet<String>,
+    /// Messages written while a turn was running. Claude doesn't fold them into that turn;
+    /// it answers each with a turn of its own afterwards (checked on 2.1.318).
+    queued_prompts: VecDeque<String>,
 }
 
 impl Mapper {
@@ -78,7 +81,8 @@ impl Mapper {
     /// A user message was written to the CLI.
     pub fn begin_turn(&mut self, text: &str) -> Vec<Event> {
         if self.in_turn {
-            return Vec::new(); // the CLI takes it into the running turn
+            self.queued_prompts.push_back(text.to_string()); // its turn starts after this one
+            return Vec::new();
         }
         self.in_turn = true;
         vec![Event::TurnStarted { prompt: Some(text.to_string()) }]
@@ -116,9 +120,10 @@ impl Mapper {
                     out.events.push(Event::SessionStarted { native_session_id: id.to_string(), model });
                 }
                 if !self.in_turn {
-                    // No message of ours started it: Claude woke itself (a background task finished).
+                    // A turn we didn't start: a message written mid-turn, or Claude waking
+                    // itself (a background task finished).
                     self.in_turn = true;
-                    out.events.push(Event::TurnStarted { prompt: None });
+                    out.events.push(Event::TurnStarted { prompt: self.queued_prompts.pop_front() });
                 }
             }
             Some("compact_boundary") => out.events.push(Event::Notice { text: "Context compacted".into() }),

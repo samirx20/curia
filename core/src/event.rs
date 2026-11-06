@@ -84,6 +84,31 @@ pub enum Event {
     TurnFinished { outcome: TurnOutcome, cost_usd: Option<f64> },
     /// The CLI process ended.
     Exited { code: Option<i32> },
+
+    // Control room: recorded by the host, not by a CLI adapter.
+    /// This thread handed a task to a team; `thread_id` is the new team thread.
+    HandedOff { thread_id: String, team: String, title: String, branch: Option<String> },
+    /// A message from another thread (or the user, `from` = None) reached this thread.
+    /// `how`: `steered` into the running turn, `queued` until it ends, or `started` a turn.
+    Message { from: Option<String>, text: String, how: String },
+    /// A team thread handed back. `inferred`: it never called report_result, so its last
+    /// message is used. `ok`: its turn completed (false: it failed or was cut off).
+    HandBack { from: String, summary: String, inferred: bool, ok: bool, merge: MergeReport },
+    /// A merge was undone (`merge_id` from a `HandBack`).
+    MergeUndone { merge_id: String },
+}
+
+/// What happened to a team's branch when it handed back.
+#[derive(Debug, Clone, PartialEq, Serialize, Deserialize)]
+#[serde(tag = "result", rename_all = "snake_case")]
+pub enum MergeReport {
+    Merged { merge_id: String, branch: String, files: Vec<String> },
+    /// The branch had nothing new.
+    NothingToMerge { branch: String },
+    /// Not merged; the work stays on `branch`.
+    Failed { branch: String, reason: String },
+    /// The thread has no branch (it shares its parent's folder).
+    NoBranch,
 }
 
 #[derive(Debug, Clone, Copy, PartialEq, Eq, Serialize, Deserialize)]

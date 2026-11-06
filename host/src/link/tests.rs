@@ -30,7 +30,7 @@ async fn clients_catch_up_exactly_after_a_disconnect() {
     let t = host
         .create_thread(&NewThread {
             title: "t".into(), cli: "claude".into(), config_dir: "c".into(), cwd: ".".into(),
-            model: None, effort: None, permission_mode: "manual".into(),
+            model: None, effort: None, permission_mode: "manual".into(), ..Default::default()
         })
         .unwrap();
     host.inject(&t.id, &[notice(1), notice(2), notice(3)]).unwrap();

@@ -1,16 +1,22 @@
 //! The host: owns the data folder, the store and the live CLI processes. Every client
-//! action is one of these operations.
+//! action, and every control-room tool an agent calls, is one of its operations.
+mod ask;
+mod control;
+mod deliver;
 mod live;
+mod ops;
+
+#[cfg(test)]
+mod tests;
 
 use crate::claude::find_claude;
-use crate::git::checkpoint;
-use crate::store::{NewThread, Recovered, Store, ThreadRow};
+use crate::store::{Recovered, Store};
 use anyhow::{Context, Result, bail};
 use curia_core::{Decision, Event};
 use std::collections::HashMap;
 use std::path::{Path, PathBuf};
-use std::sync::{Arc, Mutex};
-use tokio::sync::broadcast;
+use std::sync::{Arc, Mutex, OnceLock};
+use tokio::sync::{broadcast, oneshot};
 
 pub use live::Live;
 
@@ -27,13 +33,19 @@ pub struct Host {
     pub store: Store,
     data_dir: PathBuf,
     /// Found the first time a Claude thread starts, so a host without Claude still opens.
-    claude_exe: std::sync::OnceLock<PathBuf>,
+    claude_exe: OnceLock<PathBuf>,
     live: Mutex<HashMap<String, Arc<Live>>>,
     events: broadcast::Sender<HostEvent>,
+    /// The control room's MCP address, once it is serving.
+    mcp_url: OnceLock<String>,
+    /// Control-room token → the thread it was issued to. Valid only while that thread's CLI runs.
+    tokens: Mutex<HashMap<String, String>>,
+    /// `ask_human` questions waiting for an answer: request id → (thread, answer channel).
+    asks: Mutex<HashMap<String, (String, oneshot::Sender<Decision>)>>,
     _lock: std::fs::File,
 }
 
-fn lock<T>(m: &Mutex<T>) -> std::sync::MutexGuard<'_, T> {
+pub(crate) fn lock<T>(m: &Mutex<T>) -> std::sync::MutexGuard<'_, T> {
     m.lock().unwrap_or_else(|p| p.into_inner())
 }
 
@@ -51,9 +63,12 @@ impl Host {
         let host = Host {
             store,
             data_dir: data_dir.to_path_buf(),
-            claude_exe: std::sync::OnceLock::new(),
+            claude_exe: OnceLock::new(),
             live: Mutex::new(HashMap::new()),
             events: broadcast::channel(4096).0,
+            mcp_url: OnceLock::new(),
+            tokens: Mutex::new(HashMap::new()),
+            asks: Mutex::new(HashMap::new()),
             _lock: lock_file,
         };
         Ok((Arc::new(host), recovered))
@@ -63,77 +78,30 @@ impl Host {
         self.events.subscribe()
     }
 
-    pub fn create_thread(&self, t: &NewThread) -> Result<ThreadRow> {
-        if t.cli != "claude" {
-            bail!("only Claude Code threads exist so far");
-        }
-        self.store.thread_create(t)
-    }
-
-    /// Sends a message, starting the thread's CLI first if it isn't running. A message that
-    /// starts a new turn takes the turn's "before" checkpoint first.
-    pub async fn send(self: &Arc<Self>, thread_id: &str, text: &str) -> Result<()> {
-        let row = self.store.thread_get(thread_id)?;
-        let live = self.live(&row).await?;
-        if row.status != "running" {
-            let before = snapshot(&row.cwd, "curia: before turn").await?;
-            live.set_pending_before(before);
-        }
-        live.session.send(text).await
-    }
-
-    pub async fn answer(&self, thread_id: &str, request_id: &str, decision: &Decision) -> Result<()> {
-        let live = lock(&self.live).get(thread_id).cloned();
-        let live = live.context("this request can't be answered any more: the thread's CLI is no longer running")?;
-        live.session.answer(request_id, decision).await
-    }
-
-    pub async fn interrupt(&self, thread_id: &str) -> Result<()> {
-        let live = lock(&self.live).get(thread_id).cloned().context("the thread isn't running")?;
-        live.session.interrupt().await
-    }
-
-    pub async fn set_effort(&self, thread_id: &str, level: &str) -> Result<()> {
-        let live = lock(&self.live).get(thread_id).cloned().context("the thread isn't running")?;
-        live.session.set_effort(level).await
-    }
-
-    /// What a turn changed: from its "before" checkpoint to its "after" one (or to now).
-    pub async fn turn_diff(&self, thread_id: &str, turn: usize) -> Result<checkpoint::Diff> {
-        let row = self.store.thread_get(thread_id)?;
-        let t = self.store.turns(thread_id)?.into_iter().nth(turn).context("no such turn")?;
-        let before = t.checkpoint_before.context("this turn has no checkpoint (is the folder a git repo?)")?;
-        let cwd = PathBuf::from(row.cwd);
-        tokio::task::spawn_blocking(move || checkpoint::diff(&cwd, &before, t.checkpoint_after.as_deref())).await?
-    }
-
-    /// Puts the thread's folder back to how it was before `turn`. Returns the safety
-    /// checkpoint that undoes this.
-    pub async fn restore_before(&self, thread_id: &str, turn: usize) -> Result<String> {
-        let row = self.store.thread_get(thread_id)?;
-        if row.status == "running" {
-            bail!("stop the thread's turn before restoring files");
-        }
-        let t = self.store.turns(thread_id)?.into_iter().nth(turn).context("no such turn")?;
-        let target = t.checkpoint_before.context("this turn has no checkpoint")?;
-        let cwd = PathBuf::from(row.cwd);
-        tokio::task::spawn_blocking(move || checkpoint::restore(&cwd, &target)).await?
-    }
-
-    /// Closes every running CLI (each exits on its own or is killed after 3 s).
-    pub async fn close_all(&self) {
-        let all: Vec<Arc<Live>> = lock(&self.live).values().cloned().collect();
-        for live in all {
-            live.session.close().await;
-        }
+    pub fn data_dir(&self) -> &Path {
+        &self.data_dir
     }
 
     pub fn is_live(&self, thread_id: &str) -> bool {
         lock(&self.live).contains_key(thread_id)
     }
 
-    pub fn data_dir(&self) -> &Path {
-        &self.data_dir
+    /// Serves the control room's MCP tools from now on; threads started later get them.
+    pub fn set_mcp_url(&self, url: String) {
+        let _ = self.mcp_url.set(url);
+    }
+
+    /// The thread a control-room token belongs to, while that thread's CLI runs.
+    pub fn thread_for_token(&self, token: &str) -> Option<String> {
+        lock(&self.tokens).get(token).cloned()
+    }
+
+    /// Stores host-made events in a thread and tells subscribers.
+    pub(crate) fn record(&self, thread_id: &str, events: &[Event]) -> Result<()> {
+        for s in self.store.record(thread_id, events)? {
+            let _ = self.events.send(HostEvent { thread_id: thread_id.to_string(), seq: Some(s.seq), event: s.event });
+        }
+        Ok(())
     }
 
     fn claude_exe(&self) -> Result<PathBuf> {
@@ -153,22 +121,8 @@ impl Host {
                 let _ = self.events.send(HostEvent { thread_id: thread_id.into(), seq: None, event: e.clone() });
                 continue;
             }
-            for s in self.store.record(thread_id, std::slice::from_ref(e))? {
-                let _ = self.events.send(HostEvent { thread_id: thread_id.into(), seq: Some(s.seq), event: s.event });
-            }
+            self.record(thread_id, std::slice::from_ref(e))?;
         }
         Ok(())
     }
-
-    fn transcript_path(&self, thread_id: &str) -> Result<PathBuf> {
-        let dir = self.data_dir.join("transcripts").join(thread_id);
-        std::fs::create_dir_all(&dir)?;
-        Ok(dir.join(format!("{}.jsonl", crate::store::now_ms())))
-    }
-}
-
-/// A checkpoint off the async threads (git can take a moment).
-async fn snapshot(cwd: &str, label: &'static str) -> Result<Option<String>> {
-    let cwd = PathBuf::from(cwd);
-    tokio::task::spawn_blocking(move || checkpoint::snapshot(&cwd, label)).await?
 }

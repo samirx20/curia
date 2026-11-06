@@ -10,6 +10,7 @@ anyhow = "1.0.104"
 axum = { version = "0.8.9", features = ["ws"] }
 curia-core.workspace = true
 futures-util = "0.3.34"
+rmcp = { version = "3.9.0", features = ["server", "macros", "transport-streamable-http-server"] }
 rusqlite = { version = "0.41.1", features = ["bundled"] }
 serde = { version = "1.0.229", features = ["derive"] }
 serde_json = "1.0.154"
