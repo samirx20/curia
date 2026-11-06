@@ -102,8 +102,12 @@ fn numstat(cwd: &Path, path: &str) -> (usize, usize) {
 
 /// A path inside the thread's folder; anything that climbs out (`..`, an absolute path) is refused.
 fn inside(cwd: &str, path: &str) -> Result<PathBuf> {
+    // Checked the same on every host: a Windows-style path sent to a Linux host must not slip
+    // through as an odd file name.
+    let starts_outside = path.starts_with('/') || path.starts_with('\\') || path.contains(':');
+    let climbs = path.split(['/', '\\']).any(|part| part == "..");
     let p = Path::new(path);
-    if p.is_absolute() || p.components().any(|c| matches!(c, Component::ParentDir | Component::Prefix(_) | Component::RootDir)) {
+    if starts_outside || climbs || p.is_absolute() || p.components().any(|c| matches!(c, Component::ParentDir | Component::Prefix(_) | Component::RootDir)) {
         bail!("{path} is outside the thread's folder");
     }
     Ok(Path::new(cwd).join(p))
@@ -117,5 +121,7 @@ mod tests {
         assert!(super::inside("C:\\run", "../secret").is_err());
         assert!(super::inside("C:\\run", "C:\\Windows\\win.ini").is_err());
         assert!(super::inside("/run", "/etc/passwd").is_err());
+        assert!(super::inside("/run", "src\\..\\..\\secret").is_err());
+        assert!(super::inside("/run", "\\\\server\\share").is_err());
     }
 }
