@@ -44,6 +44,8 @@ pub struct Host {
     tokens: Mutex<HashMap<String, String>>,
     /// `ask_human` questions waiting for an answer: request id → (thread, answer channel).
     asks: Mutex<HashMap<String, (String, oneshot::Sender<Decision>)>>,
+    /// The host's own Web Push key (VAPID).
+    pub push: crate::push::Keys,
     _lock: std::fs::File,
 }
 
@@ -72,6 +74,7 @@ impl Host {
             mcp_url: OnceLock::new(),
             tokens: Mutex::new(HashMap::new()),
             asks: Mutex::new(HashMap::new()),
+            push: crate::push::Keys::load_or_make(data_dir)?,
             _lock: lock_file,
         };
         Ok((Arc::new(host), recovered))

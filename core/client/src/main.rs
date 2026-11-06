@@ -4,7 +4,7 @@
 //!   curia --data <dir> new --team N --cwd <dir> [--title T] [--model M] [--effort E] [--mode M]
 //!   curia --data <dir> move (--thread <id> | --last) --team N | settings | set --key K --value V | inbox
 //!   curia --data <dir> answer --thread <id> --request <id> [--deny]
-//!   curia --data <dir> pair [--role owner|approve|view] | devices | unpair --device <id>
+//!   curia --data <dir> pair [--role owner|approve|view] [--minutes N] | devices | unpair --device <id>
 //!   curia --data <dir> watch (--thread <id> | --last) [--after N]
 //!   curia --data <dir> chat (--thread <id> | --last)
 use anyhow::{Context, Result, bail};
@@ -89,11 +89,17 @@ async fn main() -> Result<()> {
         }
         Some("pair") => {
             let role = flags.get("role").cloned().unwrap_or_else(|| "approve".into());
-            let r = link.call(Call::PairCode { role }).await?;
+            let minutes = flags.get("minutes").map(|m| m.parse()).transpose().context("--minutes takes a number")?;
+            let r = link.call(Call::PairCode { role, minutes }).await?;
             let code = r["code"].as_str().unwrap_or("");
             // The code rides in the address's fragment, which browsers never send to a server.
-            let page = data_url(&data)?.replace("ws://", "http://").replace("/ws", "/");
-            println!("Pairing code {code} ({} device), good for one minute.", r["role"].as_str().unwrap_or(""));
+            // A phone uses the host's Tailscale address when it has one.
+            let page = match remote_url(&data)? {
+                Some(remote) => remote,
+                None => data_url(&data)?.replace("ws://", "http://").replace("/ws", "/"),
+            };
+            let left = (r["expires_at_ms"].as_i64().unwrap_or(0) - std::time::SystemTime::now().duration_since(std::time::UNIX_EPOCH)?.as_millis() as i64) / 60_000;
+            println!("Pairing code {code} ({} device), good for {} minute(s).", r["role"].as_str().unwrap_or(""), left.max(1));
             println!("Open on the device: {page}#pair={code}");
             Ok(())
         }
@@ -225,4 +231,10 @@ async fn chat(link: &Link, mut events: tokio::sync::mpsc::UnboundedReceiver<Inco
 fn data_url(data: &std::path::Path) -> Result<String> {
     let v: serde_json::Value = serde_json::from_str(&std::fs::read_to_string(data.join("link.json"))?)?;
     Ok(v["url"].as_str().context("link.json has no url")?.to_string())
+}
+
+/// The host's HTTPS address on the tailnet, if it serves one.
+fn remote_url(data: &std::path::Path) -> Result<Option<String>> {
+    let v: serde_json::Value = serde_json::from_str(&std::fs::read_to_string(data.join("link.json"))?)?;
+    Ok(v["remote_url"].as_str().map(str::to_string))
 }

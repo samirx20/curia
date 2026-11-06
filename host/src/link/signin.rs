@@ -52,11 +52,17 @@ fn hello() -> Value {
     json!({"host": "curia", "version": env!("CARGO_PKG_VERSION"), "role": "owner"})
 }
 
-/// The device calls (owner only, checked before this). None for any other call.
-pub fn devices(host: &Host, gate: &Gate, call: &Call) -> Option<Result<Value>> {
+/// The device calls (roles checked before this). None for any other call.
+pub fn devices(host: &Host, gate: &Gate, who: &Who, call: &Call) -> Option<Result<Value>> {
     Some(match call {
-        Call::PairCode { role } => Role::parse(role).map(|r| {
-            let (code, expires) = gate.pair_code(r);
+        Call::PushKey => Ok(json!({"public_key": host.push.public})),
+        Call::PushSubscribe { endpoint, p256dh, auth } => match who {
+            Who::Device { id, .. } if endpoint.starts_with("https://") => host.store.push_subscribe(id, endpoint, p256dh, auth).map(|_| Value::Null),
+            Who::Device { .. } => Err(anyhow::anyhow!("a push endpoint must be https")),
+            Who::Local => Err(anyhow::anyhow!("only a paired device can receive notifications")),
+        },
+        Call::PairCode { role, minutes } => Role::parse(role).map(|r| {
+            let (code, expires) = gate.pair_code(r, *minutes);
             json!({"code": code, "role": r.name(), "expires_at_ms": expires})
         }),
         Call::DevicesList => host.store.devices().map(|d| json!(d)),

@@ -29,7 +29,7 @@ async fn a_device_pairs_signs_in_and_is_held_to_its_role() {
     let data = std::env::temp_dir().join(format!("curia-devices-test-{}", crate::store::new_id()));
     let (host, _) = Host::open(&data).unwrap();
     let (_stop, stopped) = tokio::sync::oneshot::channel::<()>();
-    tokio::spawn(super::serve(host.clone(), 0, async move {
+    tokio::spawn(super::serve(host.clone(), 0, None, None, async move {
         let _ = stopped.await;
     }));
     for _ in 0..50 {
@@ -43,7 +43,7 @@ async fn a_device_pairs_signs_in_and_is_held_to_its_role() {
     let (owner, _) = Link::connect_local(&data).await.unwrap();
 
     // Pairing: a one-time code from the owner, then the device's public key.
-    let code = owner.call(Call::PairCode { role: "approve".into() }).await.unwrap()["code"].as_str().unwrap().to_string();
+    let code = owner.call(Call::PairCode { role: "approve".into(), minutes: None }).await.unwrap()["code"].as_str().unwrap().to_string();
     let sk = SigningKey::from_slice(&[9u8; 32]).unwrap();
     let public_key = B64.encode(sk.verifying_key().to_sec1_bytes());
     let (phone, _) = Link::open(&url).await.unwrap();

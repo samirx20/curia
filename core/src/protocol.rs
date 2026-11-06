@@ -31,12 +31,21 @@ pub enum Call {
     /// public key as the uncompressed point, base64. Answers with the device's id and role.
     Pair { code: String, name: String, public_key: String },
     /// A one-time pairing code for a new device with `role` (`owner`, `approve`, `view`),
-    /// good for one minute.
-    PairCode { role: String },
+    /// good for `minutes` (default 1, at most 10).
+    PairCode {
+        role: String,
+        #[serde(default, skip_serializing_if = "Option::is_none")]
+        minutes: Option<u32>,
+    },
     /// The paired devices.
     DevicesList,
     /// Unpairs a device: its key is deleted and its connections are closed.
     DeviceRevoke { device_id: String },
+    /// The host's Web Push public key (base64url), to subscribe a browser with.
+    PushKey,
+    /// Sends this device's notifications to a browser push subscription (its endpoint and
+    /// the `p256dh` and `auth` keys, base64url). Paired devices only.
+    PushSubscribe { endpoint: String, p256dh: String, auth: String },
     ThreadsList,
     ThreadCreate { thread: NewThreadParams },
     /// Starts receiving a thread's events. `after_seq`: the last event this client has.

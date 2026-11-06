@@ -1,5 +1,5 @@
 //! Curia's host.
-//!   curia-host serve --data <dir> [--port N]     run the host for clients (see the `curia` client)
+//!   curia-host serve --data <dir> [--port N] [--tailscale PORT] [--public-url URL]   run the host for clients (see the `curia` client)
 //!   curia-host dev --data <dir> (--thread <id> | --last | --config-dir <dir> --cwd <dir> [--model M] [--effort E] [--mode M])
 //!   curia-host replay <recording.jsonl>
 //!   curia-host scrub <live recording> <fixture>
@@ -15,18 +15,22 @@ mod link;
 mod links;
 mod mcp;
 mod process;
+mod push;
 mod quota;
 mod redact;
 mod rules;
 mod record;
 mod scrub;
 mod store;
+mod tls;
 
 use anyhow::{Context, Result, bail};
 use std::path::PathBuf;
 
 const USAGE: &str = "usage:
-  curia-host serve --data <dir> [--port N]
+  curia-host serve --data <dir> [--port N] [--tailscale PORT] [--public-url URL]
+      --tailscale PORT: also serve the phone app over HTTPS on this machine's Tailscale name
+      --public-url URL: where phones reach the host when something else serves it (tailscale serve)
   curia-host dev --data <dir> (--thread <id> | --last | --config-dir <dir> --cwd <dir> [--model M] [--effort E] [--mode M])
   curia-host replay <recording.jsonl>
   curia-host scrub <live recording> <fixture>";
@@ -94,13 +98,15 @@ fn dev_args(args: &[String]) -> Result<(PathBuf, dev::Pick)> {
 }
 
 async fn serve(args: &[String]) -> Result<()> {
-    let (mut data, mut port) = (None, 0u16);
+    let (mut data, mut port, mut tailscale, mut public_url) = (None, 0u16, None::<u16>, None::<String>);
     let mut it = args.iter();
     while let Some(flag) = it.next() {
         let value = it.next().with_context(|| format!("{flag} needs a value"))?;
         match flag.as_str() {
             "--data" => data = Some(PathBuf::from(value)),
             "--port" => port = value.parse().context("--port takes a number")?,
+            "--tailscale" => tailscale = Some(value.parse().context("--tailscale takes a port number")?),
+            "--public-url" => public_url = Some(value.trim_end_matches('/').to_string() + "/"),
             _ => bail!("unknown flag {flag}\n{USAGE}"),
         }
     }
@@ -110,12 +116,23 @@ async fn serve(args: &[String]) -> Result<()> {
     }
     let control_room = mcp::start(host.clone()).await?;
     host.start_ticker();
+    push::start(host.clone());
     host.continue_after_restart(&recovered).await?;
     println!("Control room (MCP) at {control_room}");
     let shutdown = async {
         let _ = tokio::signal::ctrl_c().await;
     };
-    let result = link::serve(host.clone(), port, shutdown).await;
+    // Phones reach the host over HTTPS on the tailnet only.
+    let remote = match tailscale {
+        Some(remote_port) => {
+            let net = tls::tailnet()?;
+            let dir = host.data_dir().join("tls");
+            let config = tokio::task::spawn_blocking({ let (n, d) = (net.name.clone(), dir.clone()); move || tls::start(&n, &d) }).await??;
+            Some(link::Remote { name: net.name, ip: net.ip, port: remote_port, tls: config })
+        }
+        None => None,
+    };
+    let result = link::serve(host.clone(), port, remote, public_url, shutdown).await;
     host.close_all().await;
     tokio::time::sleep(std::time::Duration::from_millis(1500)).await; // let CLIs exit cleanly
     result

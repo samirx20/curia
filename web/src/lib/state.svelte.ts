@@ -1,6 +1,7 @@
 // What the app shows, all from the host: threads, teams, the inbox. Refreshed on sign-in and
 // whenever the host says something happened.
 import { link, type LinkState } from "./link";
+import { pushState, subscribe, type PushState } from "./push";
 
 export const app = $state({
   link: "connecting" as LinkState,
@@ -10,6 +11,7 @@ export const app = $state({
   error: "",
   /** This device's role: owner, approve or view. */
   role: "",
+  push: "unsupported" as PushState,
 });
 
 let pending: ReturnType<typeof setTimeout> | null = null;
@@ -40,6 +42,8 @@ export const onSignIn = new Set<() => void>();
 link.onState = (s) => (app.link = s);
 link.onReady = () => {
   app.role = link.role;
+  app.push = pushState();
+  if (app.push === "on") subscribe().catch((e) => (app.error = `Notifications: ${e.message}`));
   refresh();
   for (const f of onSignIn) f();
 };

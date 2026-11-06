@@ -63,7 +63,10 @@ impl Who {
     }
 }
 
-const PAIR_FOR: Duration = Duration::from_secs(60);
+/// How long a pairing code lasts: a minute unless asked for longer, never over ten.
+fn pair_for(minutes: Option<u32>) -> Duration {
+    Duration::from_secs(60 * u64::from(minutes.unwrap_or(1).clamp(1, 10)))
+}
 
 /// What every connection shares: the local token, the current pairing code, and the news
 /// that a device was revoked (its connections close).
@@ -79,10 +82,11 @@ impl Gate {
     }
 
     /// A new one-time code for a device with `role`; any earlier code stops working.
-    pub fn pair_code(&self, role: Role) -> (String, i64) {
+    pub fn pair_code(&self, role: Role, minutes: Option<u32>) -> (String, i64) {
         let code: String = uuid::Uuid::new_v4().simple().to_string()[..10].to_uppercase();
-        *self.pair.lock().unwrap() = Some((code.clone(), role, Instant::now() + PAIR_FOR));
-        (code, crate::store::now_ms() + PAIR_FOR.as_millis() as i64)
+        let ttl = pair_for(minutes);
+        *self.pair.lock().unwrap() = Some((code.clone(), role, Instant::now() + ttl));
+        (code, crate::store::now_ms() + ttl.as_millis() as i64)
     }
 
     /// Uses up the code: the role it was made for, or an error.
@@ -139,7 +143,8 @@ pub fn check_key(public_key: &str) -> Result<()> {
 pub fn required(call: &Call) -> Role {
     match call {
         Call::ThreadsList | Call::ThreadOpen { .. } | Call::ThreadHistory { .. } | Call::TeamsList | Call::SettingsGet
-        | Call::InboxList | Call::ThreadFiles { .. } | Call::FileRead { .. } | Call::FileDiff { .. } => Role::View,
+        | Call::InboxList | Call::ThreadFiles { .. } | Call::FileRead { .. } | Call::FileDiff { .. }
+        | Call::PushKey | Call::PushSubscribe { .. } => Role::View,
         Call::ThreadAnswer { .. } => Role::Approve,
         _ => Role::Owner,
     }
@@ -170,7 +175,8 @@ mod tests {
     #[test]
     fn a_pairing_code_works_once_and_a_wrong_guess_keeps_it() {
         let gate = Gate::new("t".into());
-        let (code, _) = gate.pair_code(Role::Approve);
+        let (code, _) = gate.pair_code(Role::Approve, None);
+        assert_eq!(pair_for(Some(60)), Duration::from_secs(600), "never more than ten minutes");
         assert!(gate.redeem("WRONG").is_err());
         assert_eq!(gate.redeem(&code.to_lowercase()).unwrap(), Role::Approve);
         assert!(gate.redeem(&code).is_err(), "used up");

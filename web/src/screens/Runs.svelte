@@ -5,6 +5,21 @@
   import Status from "../lib/Status.svelte";
   import { ago } from "../lib/icons";
   import { app, needsYou, teamOf } from "../lib/state.svelte";
+  import { enable } from "../lib/push";
+
+  let turningOn = $state(false);
+  let pushError = $state("");
+  async function turnOn() {
+    turningOn = true;
+    pushError = "";
+    try {
+      app.push = await enable();
+    } catch (e) {
+      pushError = (e as Error).message;
+    } finally {
+      turningOn = false;
+    }
+  }
 
   const folderOf = (cwd: string) => cwd.split(/[\\/]/).filter(Boolean).pop() ?? cwd;
   const groups = $derived.by(() => {
@@ -18,7 +33,7 @@
     return out;
   });
   const teamThreads = (rootId: string) => app.threads.filter((t) => t.root_id === rootId && t.id !== rootId);
-  const state = (t: any) => (needsYou(t.id) ? "needs" : t.status === "running" ? "running" : "done");
+  const mark = (t: any) => (needsYou(t.id) ? "needs" : t.status === "running" ? "running" : "done");
   const working = $derived(app.threads.filter((t) => t.status === "running").length);
   const waiting = $derived(new Set(app.inbox.map((q) => q.thread_id)).size);
   function note(r: any): string {
@@ -36,13 +51,25 @@
     {#if waiting}<a class="chip" href="#/inbox"><Status state="needs" size={14} />{waiting} need you</a>{/if}
   </div>
 
+  {#if app.push === "off" || app.push === "blocked"}
+    <div class="card notify">
+      <Icon name="inbox" size={22} color="var(--amber)" />
+      <div class="say">
+        <b>Turn on notifications</b>
+        <span class="muted">{app.push === "blocked" ? "They're blocked for this app in your phone's settings." : "Get a buzz when a team needs you, and allow or deny from the notification."}</span>
+        {#if pushError}<span class="err">{pushError}</span>{/if}
+      </div>
+      {#if app.push === "off"}<button class="btn primary small" disabled={turningOn} onclick={turnOn}>{turningOn ? "…" : "Turn on"}</button>{/if}
+    </div>
+  {/if}
+
   {#each groups as g (g.folder)}
     <div class="folder"><Icon name="folder" size={15} />{g.folder}</div>
     {#each g.runs as r (r.id)}
       {@const team = teamThreads(r.id)}
       <div class="card run">
         <a class="row main" href="#/t/{r.id}">
-          <Status state={state(r)} />
+          <Status state={mark(r)} />
           <span class="name">{r.title}</span>
           <span class="note" class:amber={needsYou(r.id)}>{note(r)}</span>
           <Badge team={teamOf(r)} />
@@ -52,8 +79,8 @@
           <div class="team">
             {#each team as t (t.id)}
               <a class="row" href="#/t/{t.id}">
-                <Status state={state(t)} size={14} />
-                <span class="name sub" class:dim={state(t) === "done"}>{t.title}</span>
+                <Status state={mark(t)} size={14} />
+                <span class="name sub" class:dim={mark(t) === "done"}>{t.title}</span>
                 {#if needsYou(t.id)}<span class="note amber">Needs you</span>{/if}
                 <Badge team={teamOf(t)} />
               </a>
@@ -73,6 +100,11 @@
 
 <style>
   .chips { display: flex; gap: 8px; padding: 0 8px 4px; }
+  .notify { display: flex; align-items: center; gap: 12px; padding: 14px 16px; margin: 14px 0 4px; border-color: #3a3220; }
+  .say { flex: 1; display: flex; flex-direction: column; gap: 2px; font-size: 14px; }
+  .say b { font-size: 15px; }
+  .err { color: var(--red); }
+  .small { height: 36px; padding: 0 14px; }
   a.chip { text-decoration: none; }
   .run { margin-bottom: 10px; overflow: hidden; }
   .row { display: flex; align-items: center; gap: 12px; padding: 14px 16px; color: var(--text); text-decoration: none; min-height: 52px; }

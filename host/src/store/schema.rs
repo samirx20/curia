@@ -137,4 +137,12 @@ pub const MIGRATIONS: &[&str] = &[
         last_seen_at INTEGER
     );
     ALTER TABLE requests ADD COLUMN answered_by TEXT;",
+    // 5: where to send each device's notifications (Web Push). Unpairing a device drops them.
+    "CREATE TABLE push_subscriptions (
+        endpoint TEXT PRIMARY KEY,
+        device_id TEXT NOT NULL REFERENCES devices(id) ON DELETE CASCADE,
+        p256dh TEXT NOT NULL,
+        auth TEXT NOT NULL,
+        created_at INTEGER NOT NULL
+    );",
 ];

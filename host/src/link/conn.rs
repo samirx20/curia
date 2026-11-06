@@ -89,7 +89,7 @@ pub async fn handle(host: Arc<Host>, gate: Arc<Gate>, socket: WebSocket) {
             open_thread(&host, &subs, &outbox, req.id, thread_id, *after_seq);
             continue;
         }
-        let result = match signin::devices(&host, &gate, &req.call) {
+        let result = match signin::devices(&host, &gate, &me, &req.call) {
             Some(r) => r,
             None => answer_or_dispatch(&host, &me, req.call.clone()).await,
         };
@@ -221,7 +221,9 @@ async fn dispatch(host: &Arc<Host>, call: Call) -> Result<Value> {
         }
         Call::ThreadInterrupt { thread_id } => host.interrupt(&thread_id).await.map(|_| Value::Null)?,
         Call::Hello { .. } | Call::Challenge | Call::HelloDevice { .. } | Call::Pair { .. } => bail!("already signed in"),
-        Call::PairCode { .. } | Call::DevicesList | Call::DeviceRevoke { .. } => bail!("device calls are handled before dispatch"),
+        Call::PairCode { .. } | Call::DevicesList | Call::DeviceRevoke { .. } | Call::PushKey | Call::PushSubscribe { .. } => {
+            bail!("device calls are handled before dispatch")
+        }
         Call::ThreadOpen { .. } => bail!("thread_open is handled before dispatch"),
     };
     Ok(result)

@@ -68,4 +68,30 @@ impl Store {
         )?;
         Ok(())
     }
+
+    /// Where a device wants its notifications (one endpoint per browser install).
+    pub fn push_subscribe(&self, device_id: &str, endpoint: &str, p256dh: &str, auth: &str) -> Result<()> {
+        self.conn().execute(
+            "INSERT INTO push_subscriptions (endpoint, device_id, p256dh, auth, created_at) VALUES (?1, ?2, ?3, ?4, ?5)
+             ON CONFLICT(endpoint) DO UPDATE SET device_id = ?2, p256dh = ?3, auth = ?4",
+            params![endpoint, device_id, p256dh, auth, now_ms()],
+        )?;
+        Ok(())
+    }
+
+    pub fn push_unsubscribe(&self, endpoint: &str) -> Result<()> {
+        self.conn().execute("DELETE FROM push_subscriptions WHERE endpoint = ?1", [endpoint])?;
+        Ok(())
+    }
+
+    /// (endpoint, p256dh, auth) of every device that may answer requests.
+    pub fn push_targets(&self) -> Result<Vec<(String, String, String)>> {
+        let conn = self.conn();
+        let mut stmt = conn.prepare(
+            "SELECT s.endpoint, s.p256dh, s.auth FROM push_subscriptions s JOIN devices d ON d.id = s.device_id
+             WHERE d.role IN ('owner', 'approve')",
+        )?;
+        let rows = stmt.query_map([], |r| Ok((r.get(0)?, r.get(1)?, r.get(2)?)))?.collect::<rusqlite::Result<Vec<_>>>()?;
+        Ok(rows)
+    }
 }

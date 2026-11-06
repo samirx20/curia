@@ -35,7 +35,7 @@ async fn clients_catch_up_exactly_after_a_disconnect() {
         .unwrap();
     host.inject(&t.id, &[notice(1), notice(2), notice(3)]).unwrap();
     let (stop, stopped) = tokio::sync::oneshot::channel::<()>();
-    tokio::spawn(super::serve(host.clone(), 0, async move {
+    tokio::spawn(super::serve(host.clone(), 0, None, None, async move {
         let _ = stopped.await;
     }));
     for _ in 0..50 {

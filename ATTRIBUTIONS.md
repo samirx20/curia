@@ -161,6 +161,27 @@ ECDSA P-256 from the RustCrypto project, to check the signatures devices make wi
 | subtle | 2.6.1 | BSD-3-Clause | constant-time comparisons |
 | zeroize | 1.9.1 | Apache-2.0 OR MIT | clears secrets from memory |
 
+### HTTPS and push notifications (added 2026-11-07)
+
+TLS for the phone link (rustls with the `ring` backend), and Web Push: message encryption (RFC 8291) and VAPID signatures (RFC 8292), sent over rustls with the system's trusted certificates.
+
+| Crate | Version | Licence | Pulled in by |
+|---|---|---|---|
+| rustls | 0.23.46 | Apache-2.0 OR ISC OR MIT | host |
+| tokio-rustls | 0.26.6 | MIT OR Apache-2.0 | host |
+| rustls-pki-types | 1.15.1 | MIT OR Apache-2.0 | host |
+| rustls-webpki | 0.103.16 | ISC | rustls |
+| ring | 0.17.14 | Apache-2.0 AND ISC | rustls (crypto backend) |
+| untrusted | 0.9.0 | ISC | ring, rustls-webpki |
+| rustls-native-certs | 0.8.5 | Apache-2.0 OR ISC OR MIT | host (trusted certificates for push services) |
+| schannel | 0.1.30 | MIT | rustls-native-certs (Windows) |
+| security-framework, security-framework-sys, core-foundation | 3.7.0, 2.17.0, 0.10.1 | MIT OR Apache-2.0 | rustls-native-certs (macOS) |
+| openssl-probe | 0.2.2 | MIT OR Apache-2.0 | rustls-native-certs (Linux; finds certificate files, links no OpenSSL) |
+| aes-gcm, aead, aes, cipher, ctr, ghash, polyval, universal-hash, inout | 0.11.1, 0.6.1, 0.9.4, 0.5.2, 0.10.1, 0.6.0, 0.7.3, 0.6.1, 0.2.5 | MIT OR Apache-2.0 | host (push encryption) |
+| hkdf | 0.13.0 | MIT OR Apache-2.0 | host (push encryption) |
+| getrandom | 0.2.17, 0.3.4, 0.4.3 | MIT OR Apache-2.0 | host, ring (randomness) |
+| windows-sys, windows-targets, windows_* | 0.52.x | MIT OR Apache-2.0 | ring, schannel (Windows) |
+
 ## Web app (`web/`, added 2026-11-07)
 
 Built with Node; only Svelte's runtime ships, inside the built files the host serves.
