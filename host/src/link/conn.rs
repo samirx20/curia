@@ -1,9 +1,12 @@
-//! One client connection: sign-in, requests, and the threads it follows.
+//! One client connection: sign-in, requests (each checked against the client's role), and the
+//! threads it follows.
 //!
 //! Opening a thread can't miss or repeat an event: the connection listens to the host's
 //! events before it reads the log, holds that thread's events while it reads, then passes on
 //! only those newer than what the client was sent.
+use super::auth::{self, Gate, Who};
 use super::open::{info, last_seq, open, wire};
+use super::signin;
 use super::outbox::{Out, Outbox};
 use crate::host::{Host, HostEvent};
 use crate::store::NewThread;
@@ -26,13 +29,27 @@ enum Sub {
 
 type Subs = Arc<Mutex<HashMap<String, Sub>>>;
 
-pub async fn handle(host: Arc<Host>, token: Arc<String>, socket: WebSocket) {
+pub async fn handle(host: Arc<Host>, gate: Arc<Gate>, socket: WebSocket) {
     let (sink, mut stream) = socket.split();
     let outbox = Outbox::start(sink);
     let subs: Subs = Arc::default();
     let forwarder = tokio::spawn(forward(host.clone(), subs.clone(), outbox.clone()));
-    let mut signed_in = false;
-    while let Some(Ok(msg)) = stream.next().await {
+    let mut revoked = gate.revoked.subscribe();
+    let mut who: Option<Who> = None;
+    let mut nonce: Option<String> = None;
+    loop {
+        let msg = tokio::select! {
+            m = stream.next() => match m { Some(Ok(m)) => m, _ => break },
+            r = revoked.recv() => {
+                if let (Ok(id), Some(Who::Device { id: mine, .. })) = (r, &who) {
+                    if id == *mine {
+                        outbox.close("this device was unpaired");
+                        break;
+                    }
+                }
+                continue;
+            }
+        };
         let Message::Text(text) = msg else {
             if let Message::Close(_) = msg {
                 break;
@@ -46,27 +63,56 @@ pub async fn handle(host: Arc<Host>, token: Arc<String>, socket: WebSocket) {
                 continue;
             }
         };
-        match (&req.call, signed_in) {
-            (Call::Hello { token: t }, _) if t.as_str() == token.as_str() => {
-                signed_in = true;
-                outbox.push(Out::Reply(ok(req.id, json!({"host": "curia", "version": env!("CARGO_PKG_VERSION")}))));
+        let Some(me) = who.clone() else {
+            match signin::greet(&host, &gate, &req.call, &mut nonce) {
+                Ok((value, signed)) => {
+                    who = signed;
+                    outbox.push(Out::Reply(ok(req.id, value)));
+                }
+                Err(refused) => {
+                    outbox.push(Out::Reply(error(req.id, code::UNAUTHORIZED, &refused.message)));
+                    if !refused.retry {
+                        outbox.close("not signed in");
+                        break;
+                    }
+                }
             }
-            (_, false) => {
-                outbox.push(Out::Reply(error(req.id, code::UNAUTHORIZED, "send hello with the host's token first")));
-                outbox.close("not signed in");
-                break;
-            }
-            (Call::ThreadOpen { thread_id, after_seq }, true) => open_thread(&host, &subs, &outbox, req.id, thread_id, *after_seq),
-            (call, true) => {
-                let reply = match dispatch(&host, call.clone()).await {
-                    Ok(v) => ok(req.id, v),
-                    Err(e) => error(req.id, code::FAILED, &format!("{e:#}")),
-                };
-                outbox.push(Out::Reply(reply));
-            }
+            continue;
+        };
+        let needs = auth::required(&req.call);
+        if needs > me.role() {
+            let msg = format!("this device may only {}", if me.role() == auth::Role::View { "look" } else { "look and answer requests" });
+            outbox.push(Out::Reply(error(req.id, code::UNAUTHORIZED, &msg)));
+            continue;
         }
+        if let Call::ThreadOpen { thread_id, after_seq } = &req.call {
+            open_thread(&host, &subs, &outbox, req.id, thread_id, *after_seq);
+            continue;
+        }
+        let result = match signin::devices(&host, &gate, &req.call) {
+            Some(r) => r,
+            None => answer_or_dispatch(&host, &me, req.call.clone()).await,
+        };
+        outbox.push(Out::Reply(match result {
+            Ok(v) => ok(req.id, v),
+            Err(e) => error(req.id, code::FAILED, &format!("{e:#}")),
+        }));
     }
     forwarder.abort();
+}
+
+/// Runs a call; an answer is checked for the device's signature first and logged with who gave it.
+async fn answer_or_dispatch(host: &Arc<Host>, who: &Who, call: Call) -> Result<Value> {
+    signin::check_answer(host, who, &call)?;
+    let answered = match &call {
+        Call::ThreadAnswer { thread_id, request_id, .. } => Some((thread_id.clone(), request_id.clone())),
+        _ => None,
+    };
+    let value = dispatch(host, call).await?;
+    if let Some((thread_id, request_id)) = answered {
+        host.store.request_answered_by(&thread_id, &request_id, who.label())?;
+    }
+    Ok(value)
 }
 
 fn open_thread(host: &Host, subs: &Subs, outbox: &Outbox, id: u64, thread_id: &str, after: Option<i64>) {
@@ -170,11 +216,12 @@ async fn dispatch(host: &Arc<Host>, call: Call) -> Result<Value> {
             json!(page.into_iter().map(|s| wire(&thread_id, s)).collect::<Vec<_>>())
         }
         Call::ThreadSend { thread_id, text } => json!({"delivered": host.deliver(&thread_id, None, &text).await?}),
-        Call::ThreadAnswer { thread_id, request_id, decision } => {
+        Call::ThreadAnswer { thread_id, request_id, decision, .. } => {
             host.answer(&thread_id, &request_id, &decision).await.map(|_| Value::Null)?
         }
         Call::ThreadInterrupt { thread_id } => host.interrupt(&thread_id).await.map(|_| Value::Null)?,
-        Call::Hello { .. } => bail!("already signed in"),
+        Call::Hello { .. } | Call::Challenge | Call::HelloDevice { .. } | Call::Pair { .. } => bail!("already signed in"),
+        Call::PairCode { .. } | Call::DevicesList | Call::DeviceRevoke { .. } => bail!("device calls are handled before dispatch"),
         Call::ThreadOpen { .. } => bail!("thread_open is handled before dispatch"),
     };
     Ok(result)

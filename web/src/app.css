@@ -1,0 +1,55 @@
+/* The design's tokens (the same as the desktop's Theme.qml), as CSS variables. */
+:root {
+  --app: #0d0d0d;
+  --panel: #181818;
+  --card: #1d1d1d;
+  --raised: #1f1f1f;
+  --field: #222222;
+  --selection: #262626;
+  --well: #141414;
+  --line: #2a2a2a;
+  --track: #3a3a3a;
+  --text: #ececec;
+  --text2: #a8a8a8;
+  --text3: #8c8c8c;
+  --on-light: #111111;
+  --blue: #6b9bff;
+  --amber: #e8b04b;
+  --red: #ff8f87;
+  --green: #5bc48a;
+  --purple: #b392f0;
+  --radius: 14px;
+  --radius-small: 10px;
+  --pad: 16px;
+  --mono: "JetBrains Mono", ui-monospace, "Cascadia Mono", Consolas, monospace;
+  color-scheme: dark;
+}
+
+* { box-sizing: border-box; }
+html, body { margin: 0; height: 100%; }
+body {
+  background: var(--app);
+  color: var(--text);
+  font: 15px/1.45 Inter, system-ui, -apple-system, "Segoe UI", Roboto, sans-serif;
+  -webkit-font-smoothing: antialiased;
+  -webkit-tap-highlight-color: transparent;
+  overscroll-behavior-y: none;
+}
+#app { height: 100%; }
+button { font: inherit; color: inherit; border: 0; background: none; cursor: pointer; padding: 0; }
+input, textarea { font: inherit; color: var(--text); }
+code, pre { font-family: var(--mono); font-size: 13px; }
+
+/* Shared pieces. */
+.screen { display: flex; flex-direction: column; height: 100%; }
+.scroll { flex: 1; overflow-y: auto; padding: 0 12px calc(16px + env(safe-area-inset-bottom)); }
+.title { font-size: 28px; font-weight: 700; letter-spacing: -0.4px; margin: 0; padding: calc(28px + env(safe-area-inset-top)) 20px 12px; }
+.muted { color: var(--text3); }
+.card { background: var(--panel); border: 1px solid var(--line); border-radius: var(--radius); }
+.btn { height: 44px; border-radius: var(--radius-small); padding: 0 16px; font-weight: 600; }
+.btn.primary { background: var(--text); color: var(--on-light); }
+.btn.secondary { background: var(--selection); color: var(--text); font-weight: 500; }
+.btn:disabled { opacity: 0.45; }
+.chip { display: inline-flex; align-items: center; gap: 6px; height: 30px; padding: 0 12px; border-radius: 15px; background: var(--raised); color: var(--text); font-size: 13px; }
+.folder { display: flex; align-items: center; gap: 6px; color: var(--text3); font-size: 13px; font-weight: 600; margin: 18px 8px 8px; }
+.well { background: var(--well); border-radius: 8px; padding: 10px 12px; font-family: var(--mono); font-size: 13px; overflow-wrap: anywhere; }

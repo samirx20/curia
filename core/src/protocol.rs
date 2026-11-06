@@ -20,8 +20,23 @@ pub struct Request {
 #[derive(Debug, Clone, PartialEq, Serialize, Deserialize)]
 #[serde(tag = "method", content = "params", rename_all = "snake_case")]
 pub enum Call {
-    /// Must be the first call on a connection.
+    /// Signs in a client on the host itself, with the token from `link.json`.
     Hello { token: String },
+    /// A fresh challenge for a paired device to sign (the first step of `hello_device`).
+    Challenge,
+    /// Signs in a paired device: `signature` is its key's signature of `curia-sign-in:<nonce>`
+    /// (ECDSA P-256 with SHA-256, the raw 64-byte form, base64).
+    HelloDevice { device_id: String, signature: String },
+    /// Pairs a new device with a one-time code from `pair_code`. `public_key`: its P-256
+    /// public key as the uncompressed point, base64. Answers with the device's id and role.
+    Pair { code: String, name: String, public_key: String },
+    /// A one-time pairing code for a new device with `role` (`owner`, `approve`, `view`),
+    /// good for one minute.
+    PairCode { role: String },
+    /// The paired devices.
+    DevicesList,
+    /// Unpairs a device: its key is deleted and its connections are closed.
+    DeviceRevoke { device_id: String },
     ThreadsList,
     ThreadCreate { thread: NewThreadParams },
     /// Starts receiving a thread's events. `after_seq`: the last event this client has.
@@ -29,7 +44,15 @@ pub enum Call {
     /// Older history, before `before_seq`, newest last.
     ThreadHistory { thread_id: String, before_seq: i64, limit: u32 },
     ThreadSend { thread_id: String, text: String },
-    ThreadAnswer { thread_id: String, request_id: String, decision: Decision },
+    /// Answers a request. A paired device signs `curia-answer:<thread_id>:<request_id>:<allow|deny|answer>`,
+    /// so the log records who answered.
+    ThreadAnswer {
+        thread_id: String,
+        request_id: String,
+        decision: Decision,
+        #[serde(default, skip_serializing_if = "Option::is_none")]
+        signature: Option<String>,
+    },
     ThreadInterrupt { thread_id: String },
     TeamsList,
     TeamCreate { team: NewTeamParams },

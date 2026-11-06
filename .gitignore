@@ -22,3 +22,6 @@ dist/
 # companies' logos, kept local until it's decided they may be published. The app falls
 # back to its own line marks without them.
 /desktop/providers/
+
+# The web app's packages (installed with `npm ci` in web/).
+/web/node_modules/

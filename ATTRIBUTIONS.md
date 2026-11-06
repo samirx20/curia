@@ -144,3 +144,30 @@ Checked 2026-11-06 with `cargo metadata` (every crate the build resolves).
 Only built on Android or Haiku, never here: android_system_properties 0.1.6, iana-time-zone-haiku 0.1.2 (MIT OR Apache-2.0). Only on macOS/iOS: core-foundation-sys 0.8.7 (MIT OR Apache-2.0).
 
 Listed by Cargo but only built for WebAssembly targets, never for Windows, Linux or macOS: sqlite-wasm-rs 0.6.2 (MIT), rsqlite-vfs 0.2.0 (MIT), thiserror / thiserror-impl 2.0.21 (MIT OR Apache-2.0), wasm-bindgen 0.2.130 and its macro crates (MIT OR Apache-2.0), js-sys 0.3.107 (MIT OR Apache-2.0), bumpalo 3.20.3 (MIT OR Apache-2.0), rustversion 1.0.23 (MIT OR Apache-2.0), wasip2 1.0.4 and wit-bindgen 0.57.1 (Apache-2.0 WITH LLVM-exception OR Apache-2.0 OR MIT).
+
+### Paired devices: signature checks (added 2026-11-07)
+
+ECDSA P-256 from the RustCrypto project, to check the signatures devices make with their own keys.
+
+| Crate | Version | Licence | Pulled in by |
+|---|---|---|---|
+| p256 | 0.14.0 | Apache-2.0 OR MIT | host |
+| base64 | 0.23.1 | MIT OR Apache-2.0 | host (already used by the WebSocket crates) |
+| ecdsa, elliptic-curve, primeorder, primefield | 0.17.0, 0.14.3, 0.14.0, 0.14.0 | Apache-2.0 OR MIT | p256 |
+| ff, group, wnaf | 0.14.0, 0.14.0, 0.14.1 | MIT OR Apache-2.0 | elliptic-curve |
+| crypto-bigint, ctutils, cmov, cpubits | 0.7.10, 0.4.8, 0.5.4, 0.1.1 | Apache-2.0 OR MIT | elliptic-curve |
+| sec1, pkcs8, spki, der, pem-rfc7468, base16ct, base64ct, serdect | 0.8.1, 0.11.0, 0.8.1, 0.8.3, 1.0.0, 1.0.0, 1.8.3, 0.4.3 | Apache-2.0 OR MIT | key formats |
+| signature, rfc6979, hmac | 3.0.0, 0.6.0, 0.13.0 | Apache-2.0 OR MIT | ecdsa |
+| subtle | 2.6.1 | BSD-3-Clause | constant-time comparisons |
+| zeroize | 1.9.1 | Apache-2.0 OR MIT | clears secrets from memory |
+
+## Web app (`web/`, added 2026-11-07)
+
+Built with Node; only Svelte's runtime ships, inside the built files the host serves.
+
+| Package | Version | Licence | Ships? |
+|---|---|---|---|
+| svelte | 5.57.3 | MIT | yes (its runtime) |
+| vite | 8.3.6 | MIT | no, build tool |
+| @sveltejs/vite-plugin-svelte | 7.3.1 | MIT | no, build tool |
+| their 36 build-time dependencies | | 32 MIT, 3 Apache-2.0, 1 ISC, 1 BSD-3-Clause; lightningcss (Vite's CSS minifier) MPL-2.0 | no |

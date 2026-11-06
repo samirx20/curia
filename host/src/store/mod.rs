@@ -2,6 +2,7 @@
 //! `requests`, `subagents` and the thread's status are kept in step with it in the same
 //! transaction (`record`). Settings follow what Agent Hub learned (CARRY_OVER §8).
 mod control;
+mod devices;
 mod pages;
 mod record;
 mod recover;

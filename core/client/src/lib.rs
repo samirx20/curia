@@ -21,7 +21,9 @@ pub enum Incoming {
     Activity { thread_id: String, kind: String },
 }
 
-type Pending = Arc<Mutex<HashMap<u64, oneshot::Sender<Result<Value>>>>>;
+/// The calls waiting for a reply; `None` once the connection has closed, so a later call
+/// fails at once instead of waiting for a reply that can't come.
+type Pending = Arc<Mutex<Option<HashMap<u64, oneshot::Sender<Result<Value>>>>>>;
 
 pub struct Link {
     out: mpsc::UnboundedSender<Message>,
@@ -40,12 +42,20 @@ impl Link {
         Link::connect(url, token).await
     }
 
+    /// Connects and signs in with the host's token (a client on the host itself).
     pub async fn connect(url: &str, token: &str) -> Result<(Link, mpsc::UnboundedReceiver<Incoming>)> {
+        let (link, events) = Link::open(url).await?;
+        link.call(Call::Hello { token: token.to_string() }).await.context("the host refused this client")?;
+        Ok((link, events))
+    }
+
+    /// Connects without signing in (a device then pairs or signs in with its own key).
+    pub async fn open(url: &str) -> Result<(Link, mpsc::UnboundedReceiver<Incoming>)> {
         let (ws, _) = tokio_tungstenite::connect_async(url).await.with_context(|| format!("could not reach the host at {url}"))?;
         let (mut sink, mut stream) = ws.split();
         let (out, mut out_rx) = mpsc::unbounded_channel::<Message>();
         let (events, events_rx) = mpsc::unbounded_channel();
-        let pending: Pending = Arc::default();
+        let pending: Pending = Arc::new(Mutex::new(Some(HashMap::new())));
         tokio::spawn(async move {
             while let Some(m) = out_rx.recv().await {
                 if sink.send(m).await.is_err() {
@@ -66,20 +76,21 @@ impl Link {
                 }
             }
             // The connection ended: nobody will answer the calls still waiting.
-            for (_, tx) in waiting.lock().unwrap().drain() {
+            for (_, tx) in waiting.lock().unwrap().take().unwrap_or_default() {
                 let _ = tx.send(Err(anyhow::anyhow!("the connection to the host closed")));
             }
         });
-        let link = Link { out, pending, next_id: AtomicU64::new(1) };
-        link.call(Call::Hello { token: token.to_string() }).await.context("the host refused this client")?;
-        Ok((link, events_rx))
+        Ok((Link { out, pending, next_id: AtomicU64::new(1) }, events_rx))
     }
 
     /// Sends a request and waits for its reply.
     pub async fn call(&self, call: Call) -> Result<Value> {
         let id = self.next_id.fetch_add(1, Ordering::Relaxed);
         let (tx, rx) = oneshot::channel();
-        self.pending.lock().unwrap().insert(id, tx);
+        match self.pending.lock().unwrap().as_mut() {
+            Some(waiting) => waiting.insert(id, tx),
+            None => bail!("the connection to the host closed"),
+        };
         let req = Request { jsonrpc: "2.0".into(), id, call };
         self.out.send(Message::Text(serde_json::to_string(&req)?.into())).ok().context("the connection to the host closed")?;
         rx.await.context("the connection to the host closed")?
@@ -88,7 +99,7 @@ impl Link {
 
 fn dispatch(m: Value, pending: &Pending, events: &mpsc::UnboundedSender<Incoming>) {
     if let Some(id) = m["id"].as_u64().filter(|_| m.get("method").is_none()) {
-        let Some(tx) = pending.lock().unwrap().remove(&id) else { return };
+        let Some(tx) = pending.lock().unwrap().as_mut().and_then(|w| w.remove(&id)) else { return };
         let result = match serde_json::from_value::<RpcError>(m["error"].clone()) {
             Ok(e) => Err(anyhow::anyhow!("{} (code {})", e.message, e.code)),
             Err(_) => Ok(m["result"].clone()),

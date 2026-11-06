@@ -4,6 +4,7 @@
 //!   curia --data <dir> new --team N --cwd <dir> [--title T] [--model M] [--effort E] [--mode M]
 //!   curia --data <dir> move (--thread <id> | --last) --team N | settings | set --key K --value V | inbox
 //!   curia --data <dir> answer --thread <id> --request <id> [--deny]
+//!   curia --data <dir> pair [--role owner|approve|view] | devices | unpair --device <id>
 //!   curia --data <dir> watch (--thread <id> | --last) [--after N]
 //!   curia --data <dir> chat (--thread <id> | --last)
 use anyhow::{Context, Result, bail};
@@ -15,7 +16,7 @@ use std::path::PathBuf;
 use std::sync::{Arc, Mutex};
 use tokio::io::{AsyncBufReadExt, BufReader};
 
-const USAGE: &str = "usage: curia --data <dir> (threads | teams | team-add --name N --config-dir <dir> | new --team N --cwd <dir> [--model M] [--effort E] [--mode M] | move (--thread <id> | --last) --team N | settings | set --key K --value V | inbox | answer --thread <id> --request <id> [--deny] | watch (--thread <id> | --last) [--after N] | chat (--thread <id> | --last))";
+const USAGE: &str = "usage: curia --data <dir> (threads | teams | team-add --name N --config-dir <dir> | new --team N --cwd <dir> [--model M] [--effort E] [--mode M] | move (--thread <id> | --last) --team N | settings | set --key K --value V | inbox | answer --thread <id> --request <id> [--deny] | pair [--role R] | devices | unpair --device <id> | watch (--thread <id> | --last) [--after N] | chat (--thread <id> | --last))";
 
 #[tokio::main]
 async fn main() -> Result<()> {
@@ -86,6 +87,27 @@ async fn main() -> Result<()> {
             println!("{}", serde_json::to_string_pretty(&link.call(Call::SettingsSet { settings }).await?)?);
             Ok(())
         }
+        Some("pair") => {
+            let role = flags.get("role").cloned().unwrap_or_else(|| "approve".into());
+            let r = link.call(Call::PairCode { role }).await?;
+            let code = r["code"].as_str().unwrap_or("");
+            // The code rides in the address's fragment, which browsers never send to a server.
+            let page = data_url(&data)?.replace("ws://", "http://").replace("/ws", "/");
+            println!("Pairing code {code} ({} device), good for one minute.", r["role"].as_str().unwrap_or(""));
+            println!("Open on the device: {page}#pair={code}");
+            Ok(())
+        }
+        Some("devices") => {
+            for d in parse::<Vec<serde_json::Value>>(link.call(Call::DevicesList).await?)? {
+                println!("{}  {:7}  {}", d["id"].as_str().unwrap_or(""), d["role"].as_str().unwrap_or(""), d["name"].as_str().unwrap_or(""));
+            }
+            Ok(())
+        }
+        Some("unpair") => {
+            let device_id = flags.get("device").cloned().context("--device is required")?;
+            link.call(Call::DeviceRevoke { device_id }).await?;
+            Ok(())
+        }
         Some("inbox") => {
             for r in parse::<Vec<serde_json::Value>>(link.call(Call::InboxList).await?)? {
                 println!("{}  {}  {}  in \"{}\" ({})", r["request_id"].as_str().unwrap_or(""), r["kind"].as_str().unwrap_or(""),
@@ -97,7 +119,7 @@ async fn main() -> Result<()> {
             let thread_id = flags.get("thread").cloned().context("--thread is required")?;
             let request_id = flags.get("request").cloned().context("--request is required")?;
             let decision = if flags.contains_key("deny") { Decision::Deny { message: None } } else { Decision::Allow };
-            link.call(Call::ThreadAnswer { thread_id, request_id, decision }).await?;
+            link.call(Call::ThreadAnswer { thread_id, request_id, decision, signature: None }).await?;
             Ok(())
         }
         Some("team-add") => {
@@ -187,8 +209,8 @@ async fn chat(link: &Link, mut events: tokio::sync::mpsc::UnboundedReceiver<Inco
             "" => continue,
             "/quit" => break,
             "/stop" => Call::ThreadInterrupt { thread_id: id.clone() },
-            "/allow" => Call::ThreadAnswer { thread_id: id.clone(), request_id: take()?, decision: Decision::Allow },
-            "/deny" => Call::ThreadAnswer { thread_id: id.clone(), request_id: take()?, decision: Decision::Deny { message: None } },
+            "/allow" => Call::ThreadAnswer { thread_id: id.clone(), request_id: take()?, decision: Decision::Allow, signature: None },
+            "/deny" => Call::ThreadAnswer { thread_id: id.clone(), request_id: take()?, decision: Decision::Deny { message: None }, signature: None },
             undo if undo.starts_with("/undo ") => Call::MergeUndo { merge_id: undo[6..].trim().to_string() },
             text => Call::ThreadSend { thread_id: id.clone(), text: text.to_string() },
         };
@@ -197,4 +219,10 @@ async fn chat(link: &Link, mut events: tokio::sync::mpsc::UnboundedReceiver<Inco
         }
     }
     Ok(())
+}
+
+/// The link's address, from the host's `link.json`.
+fn data_url(data: &std::path::Path) -> Result<String> {
+    let v: serde_json::Value = serde_json::from_str(&std::fs::read_to_string(data.join("link.json"))?)?;
+    Ok(v["url"].as_str().context("link.json has no url")?.to_string())
 }

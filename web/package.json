@@ -1,0 +1,16 @@
+{
+  "name": "curia-web",
+  "private": true,
+  "version": "0.1.0",
+  "type": "module",
+  "description": "Curia's phone web app, served by the host.",
+  "scripts": {
+    "dev": "vite",
+    "build": "vite build"
+  },
+  "devDependencies": {
+    "@sveltejs/vite-plugin-svelte": "7.3.1",
+    "svelte": "5.57.3",
+    "vite": "8.3.6"
+  }
+}

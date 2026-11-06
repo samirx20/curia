@@ -126,4 +126,15 @@ pub const MIGRATIONS: &[&str] = &[
     CREATE TABLE settings (key TEXT PRIMARY KEY, value TEXT NOT NULL);
     ALTER TABLE threads ADD COLUMN resume_at INTEGER;
     ALTER TABLE threads ADD COLUMN auto_continues INTEGER NOT NULL DEFAULT 0;",
+    // 4: paired devices (each holds its own key; revoking deletes it), and which device
+    // answered each request ("local" for a client on the host itself).
+    "CREATE TABLE devices (
+        id TEXT PRIMARY KEY,
+        name TEXT NOT NULL,
+        role TEXT NOT NULL,
+        public_key TEXT NOT NULL,
+        created_at INTEGER NOT NULL,
+        last_seen_at INTEGER
+    );
+    ALTER TABLE requests ADD COLUMN answered_by TEXT;",
 ];
