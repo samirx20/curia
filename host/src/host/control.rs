@@ -32,7 +32,7 @@ impl Host {
         if parent.depth + 1 > MAX_DEPTH {
             bail!("hand-offs go at most {MAX_DEPTH} levels deep; do this part yourself");
         }
-        let team = self.choose_team(team, parent.team_id.as_deref())?;
+        let team = self.choose_team(team, parent.team_id.as_deref(), Some(&parent.root_id))?;
         if let Some(busy) = self.store.team_busy_in_run(&team.id, &parent.root_id)?.first() {
             bail!("team {:?} is busy in this run (thread {busy}); give it more work with send_message, or pick another team", team.name);
         }
@@ -73,7 +73,7 @@ impl Host {
         self.record(&parent.id, &[Event::HandedOff {
             thread_id: child.id.clone(), team: team.name.clone(), title: title.to_string(), branch: Some(branch.clone()),
         }])?;
-        self.start_turn(&child.id, task).await.context("the team thread could not start")?;
+        self.start_turn(&child.id, task, Some(&parent.id)).await.context("the team thread could not start")?;
         let mut note = "The team is working. Its result will arrive here as a message when it finishes; end your turn instead of waiting.".to_string();
         if dirty {
             note.push_str(" Your uncommitted changes are not in the team's checkout.");

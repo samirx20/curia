@@ -86,3 +86,20 @@ impl Store {
         Ok(())
     }
 }
+
+impl Store {
+    /// Changes a thread's model, effort or freedom level (whatever is given).
+    pub fn thread_set_options(&self, thread_id: &str, model: Option<&str>, effort: Option<&str>, freedom: Option<&str>) -> Result<()> {
+        let conn = self.conn();
+        if let Some(m) = model {
+            conn.execute("UPDATE threads SET model = ?2 WHERE id = ?1", params![thread_id, m])?;
+        }
+        if let Some(e) = effort {
+            conn.execute("UPDATE threads SET effort = ?2 WHERE id = ?1", params![thread_id, e])?;
+        }
+        if let Some(f) = freedom {
+            conn.execute("UPDATE threads SET permission_mode = ?2 WHERE id = ?1", params![thread_id, f])?;
+        }
+        Ok(())
+    }
+}

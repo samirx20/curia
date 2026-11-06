@@ -94,6 +94,22 @@ Checked 2026-11-06 with `cargo metadata` (every crate the build resolves).
 | log | 0.4.35 | MIT OR Apache-2.0 | tungstenite |
 | socket2 | 0.6.5 | MIT OR Apache-2.0 | tokio |
 
+### Desktop app (`desktop/`, its own Cargo workspace; added 2026-11-07)
+
+| What | Version | Licence | Notes |
+|---|---|---|---|
+| **Qt 6** (Core, Gui, Qml, Quick, Quick Controls) | 6.12.0 | LGPL-3.0 | **Dynamically linked** (Qt's own DLLs, unmodified) |
+| cxx-qt, cxx-qt-lib, cxx-qt-build, cxx-qt-gen, cxx-qt-macro | 0.10.0 | MIT OR Apache-2.0 | the Rust ↔ Qt bridge |
+| qt-build-utils | 0.10.0 | MIT OR Apache-2.0 | build time |
+| cxx, cxx-build, cxx-gen, cxxbridge-flags, cxxbridge-macro | 1.0.205 / 0.7.205 | MIT OR Apache-2.0 | the Rust ↔ C++ bridge |
+| link-cplusplus, scratch, static_assertions | 1.0.12, 1.0.9, 1.1.0 | MIT OR Apache-2.0 | cxx, cxx-qt |
+| clang-format, convert_case, indoc | 0.3.0, 0.6.0, 2.0.8 | MIT OR Apache-2.0 / MIT | cxx-qt-gen (build time) |
+| codespan-reporting | 0.11.1, 0.13.1 | Apache-2.0 | build time |
+| termcolor, winapi-util | 1.4.1, 0.1.11 | Unlicense OR MIT | build time |
+| unicode-segmentation, unicode-width, semver, jobserver | 1.13.3, 0.1.14/0.2.3, 1.0.28, 0.1.35 | MIT OR Apache-2.0 | build time |
+| **Inter** (variable) | 4.1 | SIL OFL 1.1 | `desktop/fonts/InterVariable.ttf`, licence text beside it |
+| **JetBrains Mono** | 2.x | SIL OFL 1.1 | `desktop/fonts/JetBrainsMono.ttf`, licence text beside it |
+
 ### Control room: MCP server (added 2026-11-06)
 
 | Crate | Version | Licence | Pulled in by |

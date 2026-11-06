@@ -30,7 +30,7 @@ fn a_streamed_reply_becomes_one_text_item() {
     ]));
     let item = ItemId("item-1".into());
     assert_eq!(events, vec![
-        Event::TurnStarted { prompt: Some("hi".into()) },
+        Event::TurnStarted { prompt: Some("hi".into()), by: None },
         Event::SessionStarted { native_session_id: "s-1".into(), model: Some("claude-haiku-5-5".into()) },
         Event::TextStarted { item: item.clone(), kind: TextKind::Text, text: "".into() },
         Event::TextDelta { item: item.clone(), text: "Hel".into() },
@@ -109,7 +109,7 @@ fn claude_can_start_a_turn_by_itself() {
     feed(&mut m, &[init.clone(), json!({"type": "result", "is_error": false})]);
     let events = feed(&mut m, &[init, json!({"type": "result", "is_error": false})]);
     assert_eq!(events, vec![
-        Event::TurnStarted { prompt: None },
+        Event::TurnStarted { prompt: None, by: None },
         Event::TurnFinished { outcome: TurnOutcome::Completed, cost_usd: None },
     ]);
 }
@@ -125,7 +125,7 @@ fn a_message_written_mid_turn_gets_its_own_turn() {
     assert!(m.begin_turn("then say BANANA").is_empty(), "nothing starts while a turn runs");
     feed(&mut m, &[json!({"type": "result", "is_error": false})]);
     let events = feed(&mut m, &[init]);
-    assert_eq!(events, vec![Event::TurnStarted { prompt: Some("then say BANANA".into()) }]);
+    assert_eq!(events, vec![Event::TurnStarted { prompt: Some("then say BANANA".into()), by: None }]);
 }
 
 #[test]

@@ -9,7 +9,8 @@ use crate::host::{Host, HostEvent};
 use crate::store::NewThread;
 use anyhow::{Result, bail};
 use axum::extract::ws::{Message, WebSocket};
-use curia_core::protocol::{Call, Request, RpcError, TeamInfo, WireEvent, code};
+use curia_core::Event;
+use curia_core::protocol::{Call, Notification, Request, RpcError, TeamInfo, WireEvent, code};
 use futures_util::StreamExt;
 use serde_json::{Value, json};
 use std::collections::HashMap;
@@ -105,7 +106,20 @@ async fn forward(host: Arc<Host>, subs: Subs, outbox: Outbox) {
 
 fn send(subs: &mut HashMap<String, Sub>, outbox: &Outbox, e: HostEvent) {
     match subs.get_mut(&e.thread_id) {
-        None => {}
+        None => {
+            // Not followed here, but the inbox and the thread list span every thread.
+            let kind = match &e.event {
+                Event::TurnStarted { .. } => "turn_started",
+                Event::TurnFinished { .. } => "turn_finished",
+                Event::ApprovalRequested { .. } => "approval_requested",
+                Event::ApprovalResolved { .. } => "approval_resolved",
+                Event::HandedOff { .. } => "handed_off",
+                Event::HandBack { .. } => "hand_back",
+                _ => return,
+            };
+            let params = json!({"thread_id": e.thread_id, "kind": kind});
+            outbox.push(Out::Note(json!({"jsonrpc": "2.0", "method": Notification::ACTIVITY, "params": params})));
+        }
         Some(Sub::Opening(held)) => held.push(e),
         Some(Sub::Open { last }) => {
             if let Some(seq) = e.seq {
@@ -145,6 +159,12 @@ async fn dispatch(host: &Arc<Host>, call: Call) -> Result<Value> {
             serde_json::to_value(s)?
         }
         Call::InboxList => json!(host.store.pending_requests()?),
+        Call::ThreadConfigure { thread_id, model, effort, freedom } => {
+            host.thread_configure(&thread_id, model.as_deref(), effort.as_deref(), freedom.as_deref()).await.map(|_| Value::Null)?
+        }
+        Call::ThreadFiles { thread_id } => host.thread_files(&thread_id).await?,
+        Call::FileRead { thread_id, path } => host.file_read(&thread_id, &path)?,
+        Call::FileDiff { thread_id, path } => host.file_diff(&thread_id, &path).await?,
         Call::ThreadHistory { thread_id, before_seq, limit } => {
             let page = host.store.events_before(&thread_id, before_seq, limit.min(500))?;
             json!(page.into_iter().map(|s| wire(&thread_id, s)).collect::<Vec<_>>())

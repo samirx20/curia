@@ -29,7 +29,10 @@ async fn usage_reaches_the_team_and_auto_picks_the_most_left() {
     let (ta, tb) = (on_team(&h, &a.id, "ca"), on_team(&h, &b.id, "cb"));
     h.usage_seen(&ta.id, &[window("five_hour", 0.70, 60), window("seven_day", 0.20, 3000)], false).unwrap();
     h.usage_seen(&tb.id, &[window("five_hour", 0.10, 60)], false).unwrap();
-    assert_eq!(h.choose_team("auto", None).unwrap().name, "b");
+    assert_eq!(h.choose_team("auto", None, None).unwrap().name, "b");
+    // In b's own run, b is busy (its thread is mid-turn), so `auto` picks the other team.
+    h.inject(&tb.id, &[Event::TurnStarted { prompt: Some("work".into()), by: None }]).unwrap();
+    assert_eq!(h.choose_team("auto", Some(&b.id), Some(&tb.id)).unwrap().name, "a");
     let listed = h.teams_with_quota(None).unwrap();
     let a_row = listed.iter().find(|t| t["name"] == "a").unwrap();
     assert_eq!((a_row["five_hour_percent_left"].as_f64(), a_row["weekly_percent_left"].as_f64()), (Some(30.0), Some(80.0)));
@@ -42,13 +45,13 @@ async fn a_team_that_runs_out_marks_itself_and_the_thread_waits_for_the_reset() 
     let t = on_team(&h, &a.id, "ca");
     h.usage_seen(&t.id, &[window("five_hour", 1.0, 30)], true).unwrap();
     h.inject(&t.id, &[
-        Event::TurnStarted { prompt: Some("go".into()) },
+        Event::TurnStarted { prompt: Some("go".into()), by: None },
         Event::TurnFinished { outcome: TurnOutcome::UsageLimited { resets_at_ms: None }, cost_usd: None },
     ]).unwrap();
     h.out_of_quota(&t.id).await.unwrap();
     let c = h.store.team_candidate(&a.id).unwrap();
     assert!(c.limited_until.unwrap() > now_ms());
-    assert!(h.choose_team("auto", None).is_err(), "an out-of-quota team isn't picked");
+    assert!(h.choose_team("auto", None, None).is_err(), "an out-of-quota team isn't picked");
     // Due after the reset, not before.
     assert!(h.store.threads_due(now_ms()).unwrap().is_empty());
     assert_eq!(h.store.threads_due(now_ms() + 32 * 60_000).unwrap(), vec![t.id.clone()]);

@@ -67,7 +67,7 @@ impl Host {
                 self.record(thread, &[Event::Notice { text }])?;
                 continue;
             }
-            if let Err(e) = self.deliver(thread, None, CONTINUE).await {
+            if let Err(e) = self.deliver_from_curia(thread, CONTINUE).await {
                 self.record(thread, &[Event::Notice { text: format!("Could not continue after the restart: {e:#}") }])?;
             }
         }

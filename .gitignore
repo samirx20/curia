@@ -14,3 +14,6 @@
 target/
 node_modules/
 dist/
+
+# Written by the desktop build for the QML language server; holds local paths.
+.qmlls.ini

@@ -54,8 +54,14 @@ pub enum Event {
     /// The CLI reported its own session id (used to resume) and model.
     SessionStarted { native_session_id: String, model: Option<String> },
     /// A turn began. `prompt` is the message that started it, or `None` when the CLI started
-    /// it by itself (for example to report a background subagent that finished).
-    TurnStarted { prompt: Option<String> },
+    /// it by itself (for example to report a background subagent that finished). `by` says who
+    /// sent the prompt when it wasn't the user: another thread's id, or `curia` (the host itself,
+    /// for a continue or a batch of queued messages).
+    TurnStarted {
+        prompt: Option<String>,
+        #[serde(default, skip_serializing_if = "Option::is_none")]
+        by: Option<String>,
+    },
     /// A text or thinking block began. `text` is what arrived with it (often empty).
     TextStarted { item: ItemId, kind: TextKind, text: String },
     TextDelta { item: ItemId, text: String },

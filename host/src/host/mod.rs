@@ -3,6 +3,7 @@
 mod ask;
 mod control;
 mod deliver;
+mod files;
 mod inbox;
 mod live;
 mod ops;

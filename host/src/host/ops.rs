@@ -18,12 +18,14 @@ impl Host {
     /// Writes a message as a new turn, starting the thread's CLI first if needed. The turn's
     /// "before" checkpoint is taken first. Callers outside the host use `deliver`, which
     /// decides between starting, steering and queueing.
-    pub(crate) async fn start_turn(self: &Arc<Self>, thread_id: &str, text: &str) -> Result<()> {
+    /// `by`: who sent it when not the user (another thread's id, or `curia`).
+    pub(crate) async fn start_turn(self: &Arc<Self>, thread_id: &str, text: &str, by: Option<&str>) -> Result<()> {
         let row = self.store.thread_get(thread_id)?;
         let live = self.live(&row).await?;
         if row.status != "running" {
             let before = snapshot(&row.cwd, "curia: before turn").await?;
             live.set_pending_before(before);
+            live.set_pending_by(by.map(str::to_string));
         }
         live.session.send(text).await
     }

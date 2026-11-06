@@ -34,13 +34,26 @@ impl Host {
         }
     }
 
-    /// The team to use: by name, or `auto` for the one with the most quota left (the caller's
-    /// own team keeps a reserve).
-    pub(super) fn choose_team(&self, requested: &str, caller_team: Option<&str>) -> Result<TeamRow> {
+    /// The team to use: by name, or `auto` for the one with the most quota left. `auto` only
+    /// considers teams free in the caller's run (`run_root`), which rules out the caller's own
+    /// team while it works; the caller's team also keeps a reserve.
+    pub(super) fn choose_team(&self, requested: &str, caller_team: Option<&str>, run_root: Option<&str>) -> Result<TeamRow> {
         if requested != "auto" {
             return self.store.team(requested);
         }
-        let teams = self.store.teams()?;
+        let mut teams = self.store.teams()?;
+        if let Some(root) = run_root {
+            let mut free = Vec::new();
+            for t in teams {
+                if self.store.team_busy_in_run(&t.id, root)?.is_empty() {
+                    free.push(t);
+                }
+            }
+            teams = free;
+        }
+        if teams.is_empty() {
+            bail!("no team for `auto`: every team is busy in this run");
+        }
         let candidates = teams.iter().map(|t| self.store.team_candidate(&t.id)).collect::<Result<Vec<_>>>()?;
         let caller_name = caller_team.and_then(|id| teams.iter().find(|t| t.id == id)).map(|t| t.name.as_str());
         let name = quota::pick(&candidates, caller_name, now_ms()).map_err(|e| anyhow::anyhow!("no team for `auto`: {e}"))?;
@@ -114,9 +127,9 @@ impl Host {
         self.store.team_set_limited(&team_id, reset)?;
         let settings = self.store.settings()?;
         if settings.reroute_when_out {
-            if let Ok(to) = self.choose_team("auto", None) {
+            if let Ok(to) = self.choose_team("auto", None, None) {
                 if to.id != team_id && self.move_thread(thread_id, &to.name).await.is_ok() {
-                    self.deliver(thread_id, None, CONTINUE).await?;
+                    self.deliver_from_curia(thread_id, CONTINUE).await?;
                     return Ok(());
                 }
             }
@@ -138,7 +151,7 @@ impl Host {
                 tokio::time::sleep(std::time::Duration::from_secs(30)).await;
                 for id in host.store.threads_due(now_ms()).unwrap_or_default() {
                     let _ = host.store.thread_set_resume_at(&id, None);
-                    if let Err(e) = host.deliver(&id, None, CONTINUE).await {
+                    if let Err(e) = host.deliver_from_curia(&id, CONTINUE).await {
                         let _ = host.store.thread_set_resume_at(&id, Some(now_ms() + 5 * 60_000));
                         let _ = host.record(&id, &[Event::Notice { text: format!("Could not continue after the reset: {e:#}. Trying again in 5 minutes.") }]);
                     }

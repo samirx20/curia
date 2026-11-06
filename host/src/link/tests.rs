@@ -77,6 +77,25 @@ async fn clients_catch_up_exactly_after_a_disconnect() {
     assert_eq!(events.iter().map(|e| e.seq.unwrap()).collect::<Vec<_>>(), vec![first + 5, first + 6]);
     assert_eq!(next(&mut a_rx).await.seq, Some(first + 5), "A kept receiving all along");
 
+    // Activity in a thread A doesn't follow still reaches it, as a short notice.
+    let other = host
+        .create_thread(&NewThread {
+            title: "o".into(), cli: "claude".into(), config_dir: "c".into(), cwd: ".".into(),
+            model: None, effort: None, permission_mode: "manual".into(), ..Default::default()
+        })
+        .unwrap();
+    host.inject(&other.id, &[Event::TurnStarted { prompt: Some("x".into()), by: None }]).unwrap();
+    loop {
+        match tokio::time::timeout(Duration::from_secs(5), a_rx.recv()).await {
+            Ok(Some(Incoming::Event(e))) if e.thread_id == t.id => continue, // A's own thread, still queued
+            Ok(Some(Incoming::Activity { thread_id, kind })) => {
+                assert_eq!((thread_id, kind.as_str()), (other.id.clone(), "turn_started"));
+                break;
+            }
+            other => panic!("expected an activity notice, got {other:?}"),
+        }
+    }
+
     // A wrong token is refused.
     let url = serde_json::from_str::<serde_json::Value>(&std::fs::read_to_string(data.join("link.json")).unwrap()).unwrap()["url"]
         .as_str()

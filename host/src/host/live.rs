@@ -15,6 +15,8 @@ pub struct Live {
     pub session: Arc<ClaudeSession>,
     /// The checkpoint taken just before a message that starts a turn; the turn claims it.
     pending_before: Mutex<Option<String>>,
+    /// Who sent the message that starts the next turn (a thread id, or `curia`); the turn claims it.
+    pending_by: Mutex<Option<String>>,
     /// Tool calls started and not yet finished. Steering a message in while one runs would
     /// cut it off, so delivery queues instead.
     open_tools: AtomicI64,
@@ -23,6 +25,10 @@ pub struct Live {
 impl Live {
     pub fn set_pending_before(&self, commit: Option<String>) {
         *lock(&self.pending_before) = commit;
+    }
+
+    pub fn set_pending_by(&self, by: Option<String>) {
+        *lock(&self.pending_by) = by;
     }
 
     /// Whether a message can be slipped into the running turn now: the CLI must take
@@ -64,7 +70,7 @@ impl Host {
                 return Err(e);
             }
         };
-        let live = Arc::new(Live { session, pending_before: Mutex::new(None), open_tools: AtomicI64::new(0) });
+        let live = Arc::new(Live { session, pending_before: Mutex::new(None), pending_by: Mutex::new(None), open_tools: AtomicI64::new(0) });
         lock(&self.live).insert(row.id.clone(), live.clone());
         let (me, id, session) = (self.clone(), row.id.clone(), live.session.clone());
         tokio::spawn(async move { me.refresh_usage(&id, &session).await });
@@ -122,6 +128,11 @@ impl Host {
                 }
                 _ => {}
             }
+            // A turn says who started it (the adapter can't know; the host does).
+            let event = match event {
+                Event::TurnStarted { prompt, by: None } => Event::TurnStarted { prompt, by: lock(&live.pending_by).take() },
+                other => other,
+            };
             let exited = matches!(event, Event::Exited { .. });
             let asked = match &event {
                 Event::ApprovalRequested { request_id, tool_name, input, .. } => Some((request_id.clone(), tool_name.clone(), input.clone())),

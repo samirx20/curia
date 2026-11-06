@@ -20,6 +20,11 @@ pub fn info(row: &ThreadRow) -> ThreadInfo {
         model: row.model.clone(),
         status: row.status.clone(),
         updated_at: row.updated_at,
+        parent_id: row.parent_id.clone(),
+        root_id: row.root_id.clone(),
+        team_id: row.team_id.clone(),
+        freedom: crate::freedom::level(&row.permission_mode).to_string(),
+        branch: row.branch.clone(),
     }
 }
 

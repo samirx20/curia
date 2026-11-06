@@ -85,7 +85,7 @@ impl Mapper {
             return Vec::new();
         }
         self.in_turn = true;
-        vec![Event::TurnStarted { prompt: Some(text.to_string()) }]
+        vec![Event::TurnStarted { prompt: Some(text.to_string()), by: None }]
     }
 
     pub fn handle(&mut self, v: &Value) -> Step {
@@ -123,7 +123,7 @@ impl Mapper {
                     // A turn we didn't start: a message written mid-turn, or Claude waking
                     // itself (a background task finished).
                     self.in_turn = true;
-                    out.events.push(Event::TurnStarted { prompt: self.queued_prompts.pop_front() });
+                    out.events.push(Event::TurnStarted { prompt: self.queued_prompts.pop_front(), by: None });
                 }
             }
             Some("compact_boundary") => out.events.push(Event::Notice { text: "Context compacted".into() }),

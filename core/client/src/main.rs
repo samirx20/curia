@@ -146,6 +146,7 @@ async fn watch(link: &Link, mut events: tokio::sync::mpsc::UnboundedReceiver<Inc
                 println!("{n} {}", serde_json::to_string(&e.event)?);
             }
             Incoming::Closing(reason) => println!("host closed the connection: {reason}"),
+            Incoming::Activity { .. } => {}
         }
     }
     println!("last event #{}", last.unwrap_or(0));
@@ -159,7 +160,8 @@ async fn chat(link: &Link, mut events: tokio::sync::mpsc::UnboundedReceiver<Inco
     let pending: Arc<Mutex<Option<String>>> = Arc::default();
     let waiting = pending.clone();
     tokio::spawn(async move {
-        while let Some(Incoming::Event(e)) = events.recv().await {
+        while let Some(incoming) = events.recv().await {
+            let Incoming::Event(e) = incoming else { continue }; // closing and activity notices
             if let Event::ApprovalRequested { request_id, .. } = &e.event {
                 *waiting.lock().unwrap() = Some(request_id.clone());
             }

@@ -41,13 +41,13 @@ async fn a_finished_team_hands_back_once_merges_and_the_merge_undoes() {
     let team = thread(&h, &wt, Some(&main), None, Some("curia/t1"));
     h.store.result_expect(&team.id, &main.id).unwrap();
     // The main thread is mid-turn, so the result is queued rather than starting a CLI.
-    h.inject(&main.id, &[Event::TurnStarted { prompt: Some("go".into()) }]).unwrap();
+    h.inject(&main.id, &[Event::TurnStarted { prompt: Some("go".into()), by: None }]).unwrap();
 
     // The team writes a file without committing, says what it did, and never calls report_result.
     std::fs::write(wt.join("team.txt"), "work\n").unwrap();
     let item = ItemId("item-1".into());
     h.inject(&team.id, &[
-        Event::TurnStarted { prompt: Some("task".into()) },
+        Event::TurnStarted { prompt: Some("task".into()), by: None },
         Event::TextStarted { item: item.clone(), kind: TextKind::Text, text: "".into() },
         Event::TextDone { item, text: "I wrote team.txt".into() },
         Event::TurnFinished { outcome: TurnOutcome::Completed, cost_usd: None },
@@ -86,10 +86,10 @@ async fn a_failed_team_turn_is_reported_but_not_merged() {
     let team = thread(&h, &wt, Some(&main), None, Some("curia/t2"));
     h.store.result_expect(&team.id, &main.id).unwrap();
     h.store.result_report(&team.id, "half done").unwrap();
-    h.inject(&main.id, &[Event::TurnStarted { prompt: None }]).unwrap();
+    h.inject(&main.id, &[Event::TurnStarted { prompt: None, by: None }]).unwrap();
     std::fs::write(wt.join("half.txt"), "x").unwrap();
     merge::commit_leftovers(&wt, "half").unwrap();
-    h.inject(&team.id, &[Event::TurnStarted { prompt: None }]).unwrap();
+    h.inject(&team.id, &[Event::TurnStarted { prompt: None, by: None }]).unwrap();
     let turn = h.store.turns(&team.id).unwrap()[0].id.clone();
     let cut = TurnOutcome::Interrupted;
     h.hand_back(&team.id, &turn, &cut).await.unwrap();
@@ -111,7 +111,7 @@ async fn hand_offs_are_refused_too_deep_to_a_busy_team_or_outside_git() {
     let err = h.hand_off(&deep.id, "Claude b", "x", "task", None).await.unwrap_err();
     assert!(format!("{err:#}").contains("levels deep"), "{err:#}");
 
-    h.inject(&mid.id, &[Event::TurnStarted { prompt: None }]).unwrap();
+    h.inject(&mid.id, &[Event::TurnStarted { prompt: None, by: None }]).unwrap();
     let err = h.hand_off(&main.id, "Claude b", "x", "task", None).await.unwrap_err();
     assert!(format!("{err:#}").contains("busy"), "{err:#}");
 

@@ -28,7 +28,7 @@ fn events_are_numbered_and_keep_the_tables_in_step() {
     let item = ItemId("item-1".into());
     let stored = store
         .record(&t.id, &[
-            Event::TurnStarted { prompt: Some("hi".into()) },
+            Event::TurnStarted { prompt: Some("hi".into()), by: None },
             Event::SessionStarted { native_session_id: "s-1".into(), model: None },
             Event::TextStarted { item: item.clone(), kind: TextKind::Text, text: "".into() },
             Event::TextDelta { item: item.clone(), text: "Hel".into() },
@@ -63,14 +63,14 @@ fn recovery_expires_requests_ends_subagents_and_cuts_turns() {
     let (a, b) = (thread(&store), thread(&store));
     store
         .record(&a.id, &[
-            Event::TurnStarted { prompt: Some("go".into()) },
+            Event::TurnStarted { prompt: Some("go".into()), by: None },
             asks("r-1"),
             Event::SubagentStarted { task_id: "k".into(), tool_use_id: None, description: "d".into() },
         ])
         .unwrap();
     store
         .record(&b.id, &[
-            Event::TurnStarted { prompt: Some("done".into()) },
+            Event::TurnStarted { prompt: Some("done".into()), by: None },
             Event::TurnFinished { outcome: TurnOutcome::Completed, cost_usd: None },
         ])
         .unwrap();

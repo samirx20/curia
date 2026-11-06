@@ -43,6 +43,14 @@ pub enum Call {
     SettingsSet { settings: Value },
     /// Every approval and question waiting for an answer, across all threads.
     InboxList,
+    /// Changes a thread's model, effort or freedom (`plan`, `ask`, `sandbox`, `full`).
+    ThreadConfigure { thread_id: String, model: Option<String>, effort: Option<String>, freedom: Option<String> },
+    /// The changed files in a thread's folder.
+    ThreadFiles { thread_id: String },
+    /// One file's text, from a thread's folder.
+    FileRead { thread_id: String, path: String },
+    /// One file's changes against its folder's last commit.
+    FileDiff { thread_id: String, path: String },
 }
 
 /// A new run's main thread (team threads are made by `hand_off`).
@@ -86,6 +94,20 @@ pub struct ThreadInfo {
     /// `idle` or `running`.
     pub status: String,
     pub updated_at: i64,
+    /// The thread that handed this one its task (none for a run's main thread).
+    #[serde(default)]
+    pub parent_id: Option<String>,
+    /// The run's main thread (itself for a main thread).
+    #[serde(default)]
+    pub root_id: String,
+    #[serde(default)]
+    pub team_id: Option<String>,
+    /// Freedom level: `plan`, `ask`, `sandbox` or `full`.
+    #[serde(default)]
+    pub freedom: String,
+    /// A team thread's own branch.
+    #[serde(default)]
+    pub branch: Option<String>,
 }
 
 /// One event as a client receives it. Live-only events (streamed text) have no `seq`.
@@ -137,6 +159,10 @@ impl Notification {
     /// The host is closing this connection; `params.reason` says why (for example, the
     /// client fell too far behind and should reconnect for a snapshot).
     pub const CLOSING: &'static str = "closing";
+    /// Something happened in a thread this client doesn't follow (`params`: `thread_id`,
+    /// `kind` = the event's type). Lists that span every thread (the inbox, the sidebar)
+    /// refresh on it.
+    pub const ACTIVITY: &'static str = "activity";
 }
 
 /// Error codes (JSON-RPC reserves -32768..-32000 for its own).

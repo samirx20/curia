@@ -17,6 +17,8 @@ pub enum Incoming {
     Event(WireEvent),
     /// The host is closing the connection, and why.
     Closing(String),
+    /// Something happened in a thread this client doesn't follow (its id, and the event's type).
+    Activity { thread_id: String, kind: String },
 }
 
 type Pending = Arc<Mutex<HashMap<u64, oneshot::Sender<Result<Value>>>>>;
@@ -99,6 +101,11 @@ fn dispatch(m: Value, pending: &Pending, events: &mpsc::UnboundedSender<Incoming
             if let Ok(e) = serde_json::from_value(m["params"].clone()) {
                 let _ = events.send(Incoming::Event(e));
             }
+        }
+        Some(Notification::ACTIVITY) => {
+            let p = &m["params"];
+            let (thread_id, kind) = (p["thread_id"].as_str().unwrap_or("").to_string(), p["kind"].as_str().unwrap_or("").to_string());
+            let _ = events.send(Incoming::Activity { thread_id, kind });
         }
         Some(Notification::CLOSING) => {
             let reason = m["params"]["reason"].as_str().unwrap_or("no reason given").to_string();

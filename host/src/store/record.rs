@@ -36,7 +36,7 @@ impl Store {
             let mut redacted = original.clone();
             crate::redact::event(&mut redacted);
             let event = &redacted;
-            if let Event::TurnStarted { prompt } = event {
+            if let Event::TurnStarted { prompt, .. } = event {
                 let id = new_id();
                 tx.execute(
                     "INSERT INTO turns (id, thread_id, prompt, status, started_at) VALUES (?1, ?2, ?3, 'running', ?4)",

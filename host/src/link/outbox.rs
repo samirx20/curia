@@ -19,6 +19,8 @@ const BATCH_WINDOW: Duration = Duration::from_millis(16);
 pub enum Out {
     Reply(Value),
     Event(WireEvent),
+    /// A ready-made notification.
+    Note(Value),
 }
 
 #[derive(Clone)]
@@ -45,7 +47,7 @@ impl Outbox {
             return;
         }
         let size = match &out {
-            Out::Reply(v) => v.to_string().len(),
+            Out::Reply(v) | Out::Note(v) => v.to_string().len(),
             Out::Event(e) => serde_json::to_string(e).map_or(0, |s| s.len()),
         };
         let items = self.items.fetch_add(1, Ordering::SeqCst) + 1;
@@ -113,7 +115,7 @@ fn merge(batch: Vec<Out>) -> Vec<Value> {
     }
     out.into_iter()
         .map(|o| match o {
-            Out::Reply(v) => v,
+            Out::Reply(v) | Out::Note(v) => v,
             Out::Event(e) => json!({"jsonrpc": "2.0", "method": Notification::EVENT, "params": e}),
         })
         .collect()

@@ -9,6 +9,9 @@ use std::future::Future;
 use std::pin::Pin;
 use std::sync::Arc;
 
+/// The `by` of a turn the host itself started.
+pub const CURIA: &str = "curia";
+
 impl Host {
     /// Delivers `text` to a thread from another thread (`from`) or from the user (`None`).
     /// Returns how: `started` a turn, `steered` into the running one, or `queued`.
@@ -29,25 +32,32 @@ impl Host {
     /// Delivers `framed` exactly as written (it already says who it is from); `text` is what
     /// the thread's history shows.
     pub(super) async fn deliver_as_written(self: &Arc<Self>, to: &str, from: Option<&str>, text: &str, framed: &str) -> Result<&'static str> {
+        self.deliver_by(to, from, text, framed, from).await
+    }
+
+    /// Curia's own message to a thread (a continue): its turn shows it came from Curia.
+    pub(super) async fn deliver_from_curia(self: &Arc<Self>, to: &str, text: &str) -> Result<&'static str> {
+        self.deliver_by(to, None, text, text, Some(CURIA)).await
+    }
+
+    async fn deliver_by(self: &Arc<Self>, to: &str, from: Option<&str>, text: &str, framed: &str, by: Option<&str>) -> Result<&'static str> {
         let row = self.store.thread_get(to)?;
         let live = self.live_of(to);
-        let how = match live {
-            Some(l) if row.status == "running" && l.can_steer() => {
-                l.session.send(framed).await?;
-                "steered"
-            }
-            _ if row.status == "running" => {
-                self.store.mailbox_push(to, from, framed)?;
-                "queued"
-            }
-            _ => {
-                self.start_turn(to, framed).await?;
-                "started"
-            }
-        };
-        // The turn's prompt already shows a user message that started it.
+        let steer = live.as_ref().is_some_and(|l| row.status == "running" && l.can_steer());
+        let how = if steer { "steered" } else if row.status == "running" { "queued" } else { "started" };
+        // Recorded before acting, so a message from another thread always comes before the turn
+        // it starts. (A user message that starts a turn is shown by the turn's prompt.)
         if from.is_some() || how != "started" {
             self.record(to, &[Event::Message { from: from.map(str::to_string), text: text.to_string(), how: how.into() }])?;
+        }
+        let acted = match (how, live) {
+            ("steered", Some(l)) => l.session.send(framed).await,
+            ("queued", _) => self.store.mailbox_push(to, from, framed),
+            _ => self.start_turn(to, framed, by).await,
+        };
+        if let Err(e) = acted {
+            self.record(to, &[Event::Notice { text: format!("A message could not be delivered: {e:#}") }])?;
+            return Err(e);
         }
         // The turn may have ended while this was being queued: don't strand the message.
         if how == "queued" && self.store.thread_get(to)?.status != "running" {
@@ -90,6 +100,6 @@ impl Host {
             let parts: Vec<String> = msgs.into_iter().map(|(_, t)| t).collect();
             format!("{} messages arrived during your last turn:\n\n{}", parts.len(), parts.join("\n\n---\n\n"))
         };
-        self.start_turn(thread_id, &text).await
+        self.start_turn(thread_id, &text, Some(CURIA)).await
     }
 }
