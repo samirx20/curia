@@ -1,15 +1,18 @@
 import QtQuick
 import QtQuick.Controls.Basic
 import QtQuick.Layouts
-import Curia.Desktop
+// Named, so the other screens come from this file's own folder (which --live relies on).
+import Curia.Desktop as Native
 
 // The main window: sidebar, conversation, session rail. Everything shown comes from the host
 // over the link; actions go back as link calls.
 ApplicationWindow {
     id: win
-    // Opens at the design's size, or smaller on a smaller screen.
-    width: Math.min(1440, Screen.desktopAvailableWidth - 48)
-    height: Math.min(900, Screen.desktopAvailableHeight - 48)
+    // Opens at the design's size, or smaller on a smaller screen (pictures for --shot are drawn
+    // off-screen, on a pretend 800 px screen, so they keep the design's size).
+    readonly property bool fitScreen: host.arg("--shot") === ""
+    width: fitScreen ? Math.min(1440, Screen.desktopAvailableWidth - 48) : 1440
+    height: fitScreen ? Math.min(900, Screen.desktopAvailableHeight - 48) : 900
     visible: true
     title: "Curia"
     // One header: the window keeps its native frame (resizing, snapping, shadow) but has no
@@ -69,7 +72,7 @@ ApplicationWindow {
     FontLoader { id: inter; source: host.assetUrl("fonts") + "InterVariable.ttf" }
     FontLoader { id: mono; source: host.assetUrl("fonts") + "JetBrainsMono.ttf" }
 
-    HostLink {
+    Native.HostLink {
         id: host
         onConnectedChanged: if (connected) {
             win.everConnected = true

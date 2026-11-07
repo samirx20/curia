@@ -39,10 +39,11 @@ fn main() {
         "qml/Search.qml",
         "qml/SettingsHosts.qml",
         "qml/WindowButton.qml",
+        "qml/Live.qml",
     ]))
     .qt_module("Gui")
     .qt_module("Qml")
     .qt_module("Quick")
-    .files(["src/bridge.rs"])
+    .files(["src/bridge.rs", "src/live.rs"])
     .build();
 }

@@ -1,6 +1,7 @@
 # Cargo for the desktop app with the build tools it needs (MSVC, Qt's qmake), from anywhere:
 #   pwsh -File desktop/build.ps1 build            (debug build: desktop/target/debug/curia-desktop.exe)
 #   pwsh -File desktop/build.ps1 run -- --data C:\curia-dev\data-m6
+#   pwsh -File desktop/build.ps1 run -- --live qml   (screens from desktop/qml, reloaded on save)
 # Qt comes from Rostrum's install unless CURIA_QT points elsewhere. The first build compiles Qt's
 # glue and takes several minutes; later ones are quick.
 param([Parameter(ValueFromRemainingArguments)] $rest)
