@@ -38,6 +38,7 @@ fn main() {
         "qml/SettingsOther.qml",
         "qml/Search.qml",
         "qml/SettingsHosts.qml",
+        "qml/WindowButton.qml",
     ]))
     .qt_module("Gui")
     .qt_module("Qml")

@@ -7,10 +7,18 @@ import Curia.Desktop
 // over the link; actions go back as link calls.
 ApplicationWindow {
     id: win
-    width: 1440
-    height: 900
+    // Opens at the design's size, or smaller on a smaller screen.
+    width: Math.min(1440, Screen.desktopAvailableWidth - 48)
+    height: Math.min(900, Screen.desktopAvailableHeight - 48)
     visible: true
     title: "Curia"
+    // One header: the window keeps its native frame (resizing, snapping, shadow) but has no
+    // title bar of its own; the app's header takes its place, with its own window buttons.
+    flags: Qt.Window | Qt.ExpandedClientAreaHint | Qt.NoTitleBarBackgroundHint | Qt.CustomizeWindowHint
+    topPadding: 0
+    leftPadding: 0
+    rightPadding: 0
+    bottomPadding: 0
     color: theme.app
     font.family: inter.name
     font.pixelSize: theme.size
@@ -135,6 +143,11 @@ ApplicationWindow {
         runSummary = null
         send("summary", "run_summary", { thread_id: id })
     }
+    function toggleMaximized() {
+        if (visibility === Window.Maximized) showNormal()
+        else showMaximized()
+    }
+
     function replied(tag, value) {
         if (tag === "paired") {
             pairState = "Paired. Following it now."
@@ -211,10 +224,21 @@ ApplicationWindow {
     anchors.margins: theme.gap
     spacing: theme.gap
 
-    // The header (docs: Design 01): sidebar, the open thread, and the rail's views.
+    // The header (docs: Design 01): sidebar, the open thread, and the rail's views. It is also
+    // the window's title bar: drag it to move the window. Double-clicking its top strip (Qt's
+    // title strip, the window's top SafeArea margin) maximizes, done by Windows (src/native.rs).
+    Item {
+    Layout.fillWidth: true
+    Layout.preferredHeight: 34
+    // Behind the header's controls, so a click on one of them never reaches it. The handler only
+    // watches: a MouseArea here took the second copy of each click Qt delivers in the title strip
+    // and cancelled the buttons.
+    Item {
+        anchors.fill: parent
+        DragHandler { target: null; onActiveChanged: if (active) win.startSystemMove() }
+    }
     RowLayout {
-        Layout.fillWidth: true
-        Layout.preferredHeight: 34
+        anchors.fill: parent
         spacing: 8
         Btn { kind: "icon"; icon: "sidebar"; chosen: win.sideOpen; onClicked: win.sideOpen = !win.sideOpen }
         TeamBadge { visible: win.current !== null; team: win.currentTeam; Layout.leftMargin: 6 }
@@ -248,6 +272,14 @@ ApplicationWindow {
                 Btn { kind: "icon"; icon: "web"; chosen: win.railOpen && rail.tab === "browser"; onClicked: win.showRail("browser") }
             }
         }
+        Row {
+            Layout.leftMargin: 6
+            spacing: 2
+            WindowButton { icon: "winMin"; onClicked: win.showMinimized() }
+            WindowButton { icon: win.visibility === Window.Maximized ? "winRestore" : "winMax"; onClicked: win.toggleMaximized() }
+            WindowButton { icon: "close"; danger: true; onClicked: win.close() }
+        }
+    }
     }
 
     RowLayout {

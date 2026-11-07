@@ -35,6 +35,9 @@ QtObject {
     readonly property var icons: ({
         plus: "M12 5v14M5 12h14",
         close: "M6 6l12 12M18 6L6 18",
+        winMin: "M6 12h12",
+        winMax: "M6.5 6.5h11v11h-11z",
+        winRestore: "M6.5 9.5h8v8h-8zM9.5 9.5v-3h8v8h-3",
         search: "M11 4.5a6.5 6.5 0 1 0 0 13a6.5 6.5 0 1 0 0-13zM20 20l-4.3-4.3",
         inbox: "M3 13h5l1.5 3h5l1.5-3h5M5.5 5h13l2.5 8v6H3v-6z",
         folder: "M3 6.5h6l2 2h10V19H3z",
