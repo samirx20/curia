@@ -75,14 +75,12 @@ impl Host {
             return Ok(());
         }
         let exe = std::env::current_exe()?;
-        let args: Vec<String> = std::env::args().skip(1).map(|a| if a.contains(' ') { format!("\"{a}\"") } else { a }).collect();
-        let log = self.data_dir().join("host.log");
-        let script = format!(
-            "@echo off\r\nrem Starts the Curia host when you sign in to Windows (Settings > Host). Restarts it if it stops.\r\n\
-             title Curia host\r\n:loop\r\n\"{}\" {} >> \"{}\" 2>&1\r\ntimeout /t 5 /nobreak >nul\r\ngoto loop\r\n",
-            exe.display(), args.join(" "), log.display()
-        );
-        std::fs::write(&file, script).with_context(|| format!("could not write {}", file.display()))
+        let args: Vec<String> = std::env::args().skip(1).collect();
+        let script = starter(&exe, &args, &self.data_dir().join("host.log"));
+        // Windows Script Host reads a file as Unicode only with UTF-16 and its byte-order mark;
+        // without them a path with non-English letters would break.
+        let bytes: Vec<u8> = [0xFEFFu16].into_iter().chain(script.encode_utf16()).flat_map(u16::to_le_bytes).collect();
+        std::fs::write(&file, bytes).with_context(|| format!("could not write {}", file.display()))
     }
 }
 
@@ -92,7 +90,26 @@ fn autostart_file() -> Option<PathBuf> {
         return None;
     }
     let appdata = std::env::var_os("APPDATA")?;
-    Some(Path::new(&appdata).join(r"Microsoft\Windows\Start Menu\Programs\Startup\Curia host.cmd"))
+    Some(Path::new(&appdata).join(r"Microsoft\Windows\Start Menu\Programs\Startup\Curia host.vbs"))
+}
+
+/// The sign-in entry: a script that runs the host with no window (a console window can be
+/// closed by accident, and was once closed as the laptop woke from sleep) and starts it again
+/// five seconds after it stops. Its output goes to `log`.
+fn starter(exe: &Path, args: &[String], log: &Path) -> String {
+    let quote = |s: &str| if s.contains(' ') { format!("\"{s}\"") } else { s.to_string() };
+    let args: Vec<String> = args.iter().map(|a| quote(a)).collect();
+    // cmd /c keeps the outer quotes' contents whole when the line starts and ends with a quote.
+    let line = format!("cmd /c \"\"{}\" {} >> \"{}\" 2>&1\"", exe.display(), args.join(" "), log.display());
+    format!(
+        "' Starts the Curia host when you sign in to Windows (Settings > Host), with no window,\r\n\
+         ' and starts it again if it stops. Its output: {}\r\n\
+         ' To stop it starting at sign-in, turn the setting off or delete this file.\r\n\
+         Set shell = CreateObject(\"WScript.Shell\")\r\n\
+         Do\r\n    shell.Run \"{}\", 0, True\r\n    WScript.Sleep 5000\r\nLoop\r\n",
+        log.display(),
+        line.replace('"', "\"\"")
+    )
 }
 
 /// Whether the account folder holds a signed-in CLI (each CLI keeps its sign-in there).
@@ -123,5 +140,17 @@ mod tests {
         let rows = q["rows"].as_array().unwrap();
         assert_eq!(rows.len(), size);
         assert!(rows.iter().all(|r| r.as_str().unwrap().len() == size));
+    }
+
+    #[test]
+    fn the_sign_in_entry_runs_the_host_hidden_with_its_arguments_quoted() {
+        use std::path::Path;
+        let args = ["serve".to_string(), "--data".to_string(), r"C:\My Data\curia".to_string()];
+        let s = super::starter(Path::new(r"C:\Programs\Curia\curia-host.exe"), &args, Path::new(r"C:\My Data\curia\host.log"));
+        // In VBScript a quote inside a string is written twice.
+        assert!(s.contains(
+            r#"shell.Run "cmd /c """"C:\Programs\Curia\curia-host.exe"" serve --data ""C:\My Data\curia"" >> ""C:\My Data\curia\host.log"" 2>&1""", 0, True"#
+        ), "{s}");
+        assert!(s.contains("Do\r\n") && s.contains("Loop\r\n"));
     }
 }

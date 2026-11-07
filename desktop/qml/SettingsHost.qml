@@ -92,7 +92,7 @@ ColumnLayout {
         }
         SettingRow {
             title: "Start when you sign in"
-            hint: "The host starts by itself when you sign in to this computer, and again if it stops. Runs pick up where they were."
+            hint: "The host starts by itself, with no window, when you sign in to this computer, and again if it stops. Runs pick up where they were. Its log is host.log in the data folder."
             Toggle {
                 on: !!host.info.autostart
                 onToggled: on => host.page.send("s:changed", "autostart_set", { enabled: on })

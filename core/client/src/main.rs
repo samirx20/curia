@@ -3,6 +3,7 @@
 //!   curia --data <dir> teams | team-add --name N --config-dir <dir> [--cli claude] [--model M] [--effort E]
 //!   curia --data <dir> new --team N --cwd <dir> [--title T] [--model M] [--effort E] [--mode M]
 //!   curia --data <dir> move (--thread <id> | --last) --team N | settings | set --key K --value V | inbox
+//!   curia --data <dir> autostart (--on | --off)
 //!   curia --data <dir> answer --thread <id> --request <id> [--deny]
 //!   curia --data <dir> pair [--role owner|approve|view] [--minutes N] | devices | unpair --device <id>
 //!   curia --data <dir> terminals (--thread <id> | --last) | terminal --id <id> [--type TEXT]
@@ -17,7 +18,7 @@ use std::path::PathBuf;
 use std::sync::{Arc, Mutex};
 use tokio::io::{AsyncBufReadExt, BufReader};
 
-const USAGE: &str = "usage: curia --data <dir> (threads | teams | team-add --name N --config-dir <dir> | new --team N --cwd <dir> [--model M] [--effort E] [--mode M] | move (--thread <id> | --last) --team N | settings | set --key K --value V | inbox | answer --thread <id> --request <id> [--deny] | pair [--role R] | devices | unpair --device <id> | terminals (--thread <id> | --last) | terminal --id <id> [--type TEXT] | watch (--thread <id> | --last) [--after N] | chat (--thread <id> | --last))";
+const USAGE: &str = "usage: curia --data <dir> (threads | teams | team-add --name N --config-dir <dir> | new --team N --cwd <dir> [--model M] [--effort E] [--mode M] | move (--thread <id> | --last) --team N | settings | set --key K --value V | autostart (--on | --off) | inbox | answer --thread <id> --request <id> [--deny] | pair [--role R] | devices | unpair --device <id> | terminals (--thread <id> | --last) | terminal --id <id> [--type TEXT] | watch (--thread <id> | --last) [--after N] | chat (--thread <id> | --last))";
 
 #[tokio::main]
 async fn main() -> Result<()> {
@@ -27,7 +28,7 @@ async fn main() -> Result<()> {
     let mut it = args.iter();
     while let Some(a) = it.next() {
         match a.as_str() {
-            "--last" | "--deny" => {
+            "--last" | "--deny" | "--on" | "--off" => {
                 flags.insert(a[2..].to_string(), String::new());
             }
             f if f.starts_with("--") => {
@@ -86,6 +87,16 @@ async fn main() -> Result<()> {
             let mut settings = link.call(Call::SettingsGet).await?;
             settings[key.as_str()] = value;
             println!("{}", serde_json::to_string_pretty(&link.call(Call::SettingsSet { settings }).await?)?);
+            Ok(())
+        }
+        Some("autostart") => {
+            let enabled = match (flags.contains_key("on"), flags.contains_key("off")) {
+                (true, false) => true,
+                (false, true) => false,
+                _ => bail!("autostart takes --on or --off"),
+            };
+            link.call(Call::AutostartSet { enabled }).await?;
+            println!("the host {} when you sign in", if enabled { "now starts" } else { "no longer starts" });
             Ok(())
         }
         Some("pair") => {
